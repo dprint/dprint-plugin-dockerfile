@@ -1,0 +1,7 @@
+== should format ==
+COPY   --chown=user:group   --from=test   source1   source2   destination/
+COPY  arr[[]0].txt    /mydir/
+
+[expect]
+COPY --chown=user:group --from=test source1 source2 destination/
+COPY arr[[]0].txt /mydir/

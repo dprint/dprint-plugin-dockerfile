@@ -1,0 +1,19 @@
+== should format ==
+CMD    dprint fmt
+CMD  echo hello \
+world
+CMD    echo "\
+         hello\
+         world"
+CMD   [   "dprint"   ,    "fmt"   ]
+CMD    ["c:\\windows\\system32\\tasklist.exe"]
+
+[expect]
+CMD dprint fmt
+CMD echo hello \
+world
+CMD echo "\
+         hello\
+         world"
+CMD ["dprint", "fmt"]
+CMD ["c:\\windows\\system32\\tasklist.exe"]

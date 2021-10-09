@@ -1,0 +1,13 @@
+== should format multiple labels on multiple lines ==
+LABEL multi.label="value1" multi.label2="value2" other="value3"
+
+[expect]
+LABEL multi.label="value1" \
+      multi.label2="value2" \
+      other="value3"
+
+== should format with quotes ==
+LABEL "com.example.vendor"="ACME Incorporated"
+
+[expect]
+LABEL "com.example.vendor"="ACME Incorporated"

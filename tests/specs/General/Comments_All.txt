@@ -1,0 +1,29 @@
+== should format comment ==
+#   Comment
+RUN echo 'testing'
+
+RUN echo hello \
+#comment
+ #not a comment
+world
+
+#comment
+
+[expect]
+# Comment
+RUN echo 'testing'
+
+RUN echo hello \
+# comment
+ #not a comment
+world
+
+# comment
+
+== should handle leading whitespace before a comment ==
+  # leading whitespace is a comment
+  RUN test
+
+[expect]
+# leading whitespace is a comment
+RUN test

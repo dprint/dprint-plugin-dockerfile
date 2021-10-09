@@ -1,0 +1,31 @@
+== should format the different kinds of instructions ==
+EXPOSE   80/udp
+EXPOSE   80
+MAINTAINER  test
+USER  test
+VOLUME  ["/data"]
+VOLUME    /var/log
+VOLUME   /var/log /var/db
+WORKDIR   /a
+WORKDIR   b
+ONBUILD   ADD . /app/src
+ONBUILD    RUN /usr/local/bin/python-build --dir /app/src
+STOPSIGNAL  SIGKILL
+HEALTHCHECK  --interval=30s  CMD command
+SHELL   ["powershell", "-command"]
+
+[expect]
+EXPOSE 80/udp
+EXPOSE 80
+MAINTAINER test
+USER test
+VOLUME ["/data"]
+VOLUME /var/log
+VOLUME /var/log /var/db
+WORKDIR /a
+WORKDIR b
+ONBUILD ADD . /app/src
+ONBUILD RUN /usr/local/bin/python-build --dir /app/src
+STOPSIGNAL SIGKILL
+HEALTHCHECK --interval=30s  CMD command
+SHELL ["powershell", "-command"]

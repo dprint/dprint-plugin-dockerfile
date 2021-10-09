@@ -74,9 +74,10 @@ jobs:
       if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
       run: cargo login ${{ secrets.CRATES_TOKEN }}
 
-    - name: Cargo publish
-      if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
-      run: cargo publish
+    # enable once the parser is published
+    # - name: Cargo publish
+    #  if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
+    #  run: cargo publish
 
       # GITHUB RELEASE
     - name: Pre-release

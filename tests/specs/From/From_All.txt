@@ -1,0 +1,15 @@
+== should format ==
+FROM    base:${CODE_VERSION}
+FROM  test:tag
+FROM  test   AS   alias
+
+[expect]
+FROM base:${CODE_VERSION}
+FROM test:tag
+FROM test AS alias
+
+== should format with digest -- todo: needs to be supported in parser (skip) ==
+FROM  test@digest
+
+[expect]
+FROM test@digest

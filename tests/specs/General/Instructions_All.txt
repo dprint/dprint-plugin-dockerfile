@@ -1,0 +1,16 @@
+== should respect blank lines ==
+RUN a
+RUN b
+
+
+RUN c
+
+RUN d
+
+[expect]
+RUN a
+RUN b
+
+RUN c
+
+RUN d

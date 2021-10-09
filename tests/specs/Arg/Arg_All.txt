@@ -1,0 +1,9 @@
+== should format ==
+ARG  VERSION=latest
+ARG    VERSION
+ARG   BIN_IMAGE=test/test:bin-${TEST_VERSION}
+
+[expect]
+ARG VERSION=latest
+ARG VERSION
+ARG BIN_IMAGE=test/test:bin-${TEST_VERSION}

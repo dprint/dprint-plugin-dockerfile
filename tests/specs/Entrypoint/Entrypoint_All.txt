@@ -1,0 +1,7 @@
+== should format ==
+ENTRYPOINT   [   "executable", "param1"  ,   "param2"  ]
+ENTRYPOINT    command param1 param2
+
+[expect]
+ENTRYPOINT ["executable", "param1", "param2"]
+ENTRYPOINT command param1 param2

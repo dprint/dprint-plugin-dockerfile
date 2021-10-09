@@ -33,7 +33,7 @@ impl ConfigurationBuilder {
     if let Some(global_config) = &self.global_config {
       resolve_config(self.config.clone(), global_config).config
     } else {
-      let global_config = resolve_global_config(HashMap::new()).config;
+      let global_config = resolve_global_config(HashMap::new(), &Default::default()).config;
       resolve_config(self.config.clone(), &global_config).config
     }
   }
@@ -48,20 +48,6 @@ impl ConfigurationBuilder {
   /// Default: 120
   pub fn line_width(&mut self, value: u32) -> &mut Self {
     self.insert("lineWidth", (value as i32).into())
-  }
-
-  /// Whether to use tabs (true) or spaces (false).
-  ///
-  /// Default: `false`
-  pub fn use_tabs(&mut self, value: bool) -> &mut Self {
-    self.insert("useTabs", value.into())
-  }
-
-  /// The number of columns for an indent.
-  ///
-  /// Default: `2`
-  pub fn indent_width(&mut self, value: u8) -> &mut Self {
-    self.insert("indentWidth", (value as i32).into())
   }
 
   /// The kind of newline to use.
@@ -91,15 +77,11 @@ mod tests {
   #[test]
   fn check_all_values_set() {
     let mut config = ConfigurationBuilder::new();
-    config
-      .new_line_kind(NewLineKind::CarriageReturnLineFeed)
-      .line_width(90)
-      .use_tabs(true)
-      .indent_width(4);
+    config.new_line_kind(NewLineKind::CarriageReturnLineFeed).line_width(90);
 
     let inner_config = config.get_inner_config();
-    assert_eq!(inner_config.len(), 4);
-    let diagnostics = resolve_config(inner_config, &resolve_global_config(HashMap::new()).config).diagnostics;
+    assert_eq!(inner_config.len(), 2);
+    let diagnostics = resolve_config(inner_config, &resolve_global_config(HashMap::new(), &Default::default()).config).diagnostics;
     assert_eq!(diagnostics.len(), 0);
   }
 
@@ -109,7 +91,7 @@ mod tests {
     global_config.insert(String::from("lineWidth"), 90.into());
     global_config.insert(String::from("newLineKind"), "crlf".into());
     global_config.insert(String::from("useTabs"), true.into());
-    let global_config = resolve_global_config(global_config).config;
+    let global_config = resolve_global_config(global_config, &Default::default()).config;
     let mut config_builder = ConfigurationBuilder::new();
     let config = config_builder.global_config(global_config).build();
     assert_eq!(config.line_width, 90);
@@ -118,10 +100,9 @@ mod tests {
 
   #[test]
   fn use_defaults_when_global_not_set() {
-    let global_config = resolve_global_config(HashMap::new()).config;
+    let global_config = resolve_global_config(HashMap::new(), &Default::default()).config;
     let mut config_builder = ConfigurationBuilder::new();
     let config = config_builder.global_config(global_config).build();
-    assert_eq!(config.indent_width, 2); // this is different
     assert_eq!(config.new_line_kind == NewLineKind::LineFeed, true);
   }
 }
