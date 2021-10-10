@@ -12,5 +12,5 @@ import { createFromBuffer } from "@dprint/formatter";
 
 const formatter = createFromBuffer(getBuffer());
 
-console.log(formatter.formatText("test.toml", "RUN      /bin/bash"));
+console.log(formatter.formatText("test.dockerfile", "RUN      /bin/bash"));
 ```
