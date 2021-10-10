@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use dockerfile_parser::*;
 use dprint_core::formatting::parser_helpers::parse_raw_string;
 use dprint_core::formatting::*;
@@ -9,50 +7,12 @@ use super::helpers::*;
 use crate::configuration::Configuration;
 
 pub fn parse_items(file: &Dockerfile, text: &str, config: &Configuration) -> PrintItems {
-  let top_level_comments = get_top_level_comments(file, text);
-  let top_level_nodes = get_top_level_nodes(&top_level_comments, file);
-
-  return parse_items_inner(top_level_nodes, text, config);
-
-  fn get_top_level_comments(file: &Dockerfile, text: &str) -> HashMap<usize, Vec<Comment>> {
-    let mut result = HashMap::new();
-    let mut last_pos = 0;
-    for instruction in file.instructions.iter() {
-      let text = &text[last_pos..instruction.span().start];
-      result.insert(last_pos, parse_comments(text, last_pos));
-      last_pos = instruction.span().end;
-    }
-    result.insert(last_pos, parse_comments(&text[last_pos..], last_pos));
-    result
-  }
-
-  fn get_top_level_nodes<'a>(top_level_comments: &'a HashMap<usize, Vec<Comment>>, file: &'a Dockerfile) -> Vec<Node<'a>> {
-    let mut result = Vec::new();
-    let mut last_pos = 0;
-    for instruction in file.instructions.iter() {
-      if let Some(comments) = top_level_comments.get(&last_pos) {
-        for comment in comments.iter() {
-          result.push(comment.into());
-        }
-      }
-      result.push(instruction.into());
-      last_pos = instruction.span().end;
-    }
-    if let Some(comments) = top_level_comments.get(&last_pos) {
-      for comment in comments.iter() {
-        result.push(comment.into());
-      }
-    }
-    result
-  }
-}
-
-pub fn parse_items_inner(top_level_nodes: Vec<Node>, text: &str, config: &Configuration) -> PrintItems {
   let mut context = Context::new(text, config);
   let mut items = PrintItems::new();
+  let top_level_nodes = context.parse_nodes_with_comments(0, text.len(), file.instructions.iter().map(|i| i.into()));
 
   for (i, node) in top_level_nodes.iter().enumerate() {
-    items.extend(parse_node(*node, &mut context));
+    items.extend(parse_node(node.clone(), &mut context));
     items.push_signal(Signal::NewLine);
     if let Some(next_node) = top_level_nodes.get(i + 1) {
       let text_between = &text[node.span().end..next_node.span().start];
@@ -75,26 +35,7 @@ pub fn parse_items_inner(top_level_nodes: Vec<Node>, text: &str, config: &Config
 fn parse_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
 
-  // todo: remove?
-  /*
-  let previous_node_end = context.current_node.as_ref().map(|n| n.span().end).unwrap_or(0);
-  if previous_node_end < node.span().start {
-    let previous_text = &context.text[previous_node_end..node.span().start];
-    let unhandled_comments = parse_comments(previous_text, previous_node_end)
-      .into_iter()
-      .filter(|c| !context.handled_comments.contains(&c.span.start))
-      .collect::<Vec<_>>();
-    let mut previous_end = previous_node_end;
-    for comment in unhandled_comments {
-      let text_between = &context.text[previous_end..comment.span.start];
-      if text_between.chars().filter(|c| *c == '\n').count() > 1 {
-        items.push_signal(Signal::NewLine);
-      }
-      previous_end = comment.span.end
-    }
-  }*/
-
-  context.current_node = Some(node);
+  context.set_current_node(node.clone());
   items.extend(match node {
     Node::Arg(node) => parse_arg_instruction(node, context),
     Node::Cmd(node) => parse_cmd_instruction(node, context),
@@ -108,12 +49,13 @@ fn parse_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
     Node::Misc(node) => parse_misc_instruction(node, context),
     Node::Run(node) => parse_run_instruction(node, context),
     Node::StringArray(node) => parse_string_array(node, context),
-    Node::String(node) => parse_as_is(&node.span, context),
-    Node::BreakableString(node) => parse_as_is(&node.span, context),
-    Node::CopyFlag(node) => parse_as_is(&node.span, context),
+    Node::String(node) => parse_string(node, context),
+    Node::BreakableString(node) => parse_breakable_string(node, context),
+    Node::CopyFlag(node) => parse_copy_flag(node, context),
+    Node::CommentRc(node) => parse_comment(&node, context),
     Node::Comment(node) => parse_comment(node, context),
   });
-  context.current_node = Some(node);
+  context.pop_current_node();
   items
 }
 
@@ -168,13 +110,10 @@ fn parse_entrypoint_instruction<'a>(node: &'a EntrypointInstruction, context: &m
 
 fn parse_env_instruction<'a>(node: &'a EnvInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
+  let nodes = context.parse_nodes_with_comments(node.span.start, node.span.end, node.vars.iter().map(|i| i.into()));
   let prefix_str = "ENV ";
   items.push_str(prefix_str);
-  items.extend(parse_multi_line_items(
-    node.vars.iter().map(|v| v.into()).collect(),
-    prefix_str.chars().count() as u32,
-    context,
-  ));
+  items.extend(parse_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
   items
 }
 
@@ -222,8 +161,9 @@ fn parse_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: 
   let mut items = PrintItems::new();
   let count = nodes.len();
   for (i, node) in nodes.into_iter().enumerate() {
+    let is_comment = node.is_comment();
     let mut node_items = parse_node(node, context);
-    if i < count - 1 {
+    if i < count - 1 && !is_comment {
       node_items.push_str(" \\");
       node_items.push_signal(Signal::NewLine);
     }
@@ -270,30 +210,81 @@ fn parse_string_array<'a>(node: &'a StringArray, context: &mut Context<'a>) -> P
   items
 }
 
-fn parse_as_is(span: &Span, context: &mut Context) -> PrintItems {
+fn parse_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  let text = &context.text[span.start..span.end].trim();
-  for (i, line) in text.lines().enumerate() {
-    if i > 0 {
+  let is_parent_env_var = matches!(context.parent(), Some(Node::EnvVar(_)));
+  let is_quoted = context.span_text(&node.span).starts_with("\"");
+  let use_quotes = is_quoted || is_parent_env_var && context.span_text(&node.span).contains(' ');
+  let previous_parse_string_content = context.parse_string_content;
+  context.parse_string_content = use_quotes;
+
+  if use_quotes {
+    items.push_str("\"");
+  }
+  for (i, component) in node.components.iter().enumerate() {
+    items.extend(parse_node(component.into(), context));
+    if i < node.components.len() - 1 {
+      if let BreakableStringComponent::String(text) = component {
+        if !use_quotes && text.content.ends_with(" ") {
+          items.push_str(" \\");
+        } else {
+          items.push_str("\\");
+        }
+      }
       items.push_signal(Signal::NewLine);
     }
-    // be strict here, it must start with #
-    if line.starts_with("#") {
-      items.extend(parse_comment_text(&line[1..]));
-    } else {
-      items.extend(parse_raw_string(line.trim_end()));
-    }
   }
+  if use_quotes {
+    items.push_str("\"");
+  }
+
+  context.parse_string_content = previous_parse_string_content;
   items
 }
 
-fn parse_comment<'a>(comment: &'a Comment, context: &mut Context<'a>) -> PrintItems {
+fn parse_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintItems {
+  let mut items = PrintItems::new();
+  let text = if context.parse_string_content {
+    // don't trim this because it's the content
+    &node.content
+  } else {
+    let should_trim = if let Some(Node::BreakableString(parent)) = context.parent() {
+      if let Some(BreakableStringComponent::String(str)) = parent.components.first() {
+        str.span == node.span
+      } else {
+        true
+      }
+    } else {
+      true
+    };
+    let text = context.span_text(&node.span);
+    if should_trim {
+      text.trim()
+    } else {
+      text.trim_end()
+    }
+  };
+  items.extend(parse_raw_string(text));
+  items
+}
+
+fn parse_copy_flag<'a>(node: &'a CopyFlag, context: &mut Context<'a>) -> PrintItems {
+  // ex: --from=foo
+  let mut items = PrintItems::new();
+  items.push_str("--");
+  items.extend(parse_node((&node.name).into(), context));
+  items.push_str("=");
+  items.extend(parse_node((&node.value).into(), context));
+  items
+}
+
+fn parse_comment<'a>(comment: &SpannedComment, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   if !context.handled_comments.insert(comment.span.start) {
     return items;
   }
 
-  items.extend(parse_comment_text(&comment.text));
+  items.extend(parse_comment_text(&comment.content));
   items.push_signal(Signal::ExpectNewLine);
 
   items
@@ -301,5 +292,5 @@ fn parse_comment<'a>(comment: &'a Comment, context: &mut Context<'a>) -> PrintIt
 
 fn parse_comment_text(text: &str) -> PrintItems {
   let text_start = text.char_indices().skip_while(|(_, c)| *c == '#').next().map(|(index, _)| index).unwrap_or(0);
-  format!("#{} {}", &text[..text_start], &text[text_start..].trim()).into()
+  format!("#{} {}", &text[1..text_start], &text[text_start..].trim()).into()
 }

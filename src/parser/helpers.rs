@@ -1,9 +1,12 @@
 use dockerfile_parser::*;
+use std::rc::Rc;
 
 macro_rules! create_node_ref {
   ($($variant_name:ident($node_name:ident),)*) => {
-    #[derive(Clone, Copy)]
+    #[derive(Clone)]
     pub enum Node<'a> {
+      /// our own created comment
+      CommentRc(Rc<SpannedComment>),
       $(
         $variant_name(&'a $node_name),
       )*
@@ -35,7 +38,7 @@ create_node_ref!(
   String(SpannedString),
   BreakableString(BreakableString),
   StringArray(StringArray),
-  Comment(Comment),
+  Comment(SpannedComment),
 );
 
 impl<'a> Node<'a> {
@@ -59,16 +62,16 @@ impl<'a> Node<'a> {
       BreakableString(node) => node.span,
       StringArray(node) => node.span,
       Comment(node) => node.span,
+      CommentRc(node) => node.span,
     }
+  }
+
+  pub fn is_comment(&self) -> bool {
+    matches!(self, Node::Comment(_) | Node::CommentRc(_))
   }
 }
 
-pub struct Comment {
-  pub span: Span,
-  pub text: String,
-}
-
-pub fn parse_comments(text: &str, offset: usize) -> Vec<Comment> {
+pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment> {
   let mut comments = Vec::new();
   let mut char_iterator = text.char_indices();
   let mut in_start_comment_context = true;
@@ -88,13 +91,13 @@ pub fn parse_comments(text: &str, offset: usize) -> Vec<Comment> {
         }
         end_index = i + c.len_utf8();
       }
-      comments.push(Comment {
+      comments.push(SpannedComment {
         span: Span::new(offset + start_index, offset + end_index),
-        text: text[start_index + 1..end_index].to_string(),
+        content: text[start_index..end_index].to_string(),
       });
       in_start_comment_context = true;
     } else {
-      in_start_comment_context = false;
+      in_start_comment_context = matches!(c, '\n');
     }
   }
 
@@ -114,6 +117,16 @@ impl<'a> From<&'a Instruction> for Node<'a> {
       Copy(node) => node.into(),
       Env(node) => node.into(),
       Misc(node) => node.into(),
+    }
+  }
+}
+
+impl<'a> From<&'a BreakableStringComponent> for Node<'a> {
+  fn from(component: &'a BreakableStringComponent) -> Node<'a> {
+    use BreakableStringComponent::*;
+    match component {
+      String(node) => node.into(),
+      Comment(node) => node.into(),
     }
   }
 }

@@ -4,7 +4,7 @@ RUN echo 'testing'
 
 RUN echo hello \
 #comment
- #not a comment
+ #also a comment
 world
 
 #comment
@@ -15,7 +15,7 @@ RUN echo 'testing'
 
 RUN echo hello \
 # comment
- #not a comment
+# also a comment
 world
 
 # comment
@@ -27,3 +27,13 @@ world
 [expect]
 # leading whitespace is a comment
 RUN test
+
+== should get comments in env vars ==
+ENV MY_NAME="John Doe" \
+# testing
+    MY_DOG=RexTheDog
+
+[expect]
+ENV MY_NAME="John Doe" \
+    # testing
+    MY_DOG=RexTheDog

@@ -10,3 +10,19 @@ ENV MY_CAT=fluffy
 ENV MY_NAME="John Doe" \
     MY_DOG=RexTheDog \
     MY_CAT=fluffy
+
+== should add an equals sign when missing ==
+ENV TEST /test-dir
+
+[expect]
+ENV TEST=/test-dir
+
+== should add quotes around env vars values with spaces ==
+# see https://docs.docker.com/engine/reference/builder/#env
+ENV ONE TWO=    THREE=world
+ENV ONE=TWO\=THREE\=world
+
+[expect]
+# see https://docs.docker.com/engine/reference/builder/#env
+ENV ONE="TWO=    THREE=world"
+ENV ONE=TWO\=THREE\=world

@@ -1,3 +1,4 @@
+~~ lineWidth: 40 ~~
 == should format ==
 CMD    dprint fmt
 CMD  echo hello \
