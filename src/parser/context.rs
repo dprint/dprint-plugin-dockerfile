@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::rc::Rc;
 
+use dockerfile_parser::Dockerfile;
 use dockerfile_parser::Span;
 
 use super::helpers::parse_comments;
@@ -9,6 +10,7 @@ use crate::configuration::Configuration;
 
 pub struct Context<'a> {
   pub config: &'a Configuration,
+  pub dockerfile: &'a Dockerfile,
   pub text: &'a str,
   pub handled_comments: HashSet<usize>,
   current_node: Option<Node<'a>>,
@@ -17,10 +19,11 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-  pub fn new(text: &'a str, config: &'a Configuration) -> Self {
+  pub fn new(text: &'a str, dockerfile: &'a Dockerfile, config: &'a Configuration) -> Self {
     Self {
       config,
       text,
+      dockerfile,
       handled_comments: HashSet::new(),
       current_node: None,
       parent_stack: Vec::new(),

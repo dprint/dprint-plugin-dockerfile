@@ -1,12 +1,13 @@
+~~ lineWidth: 50 ~~
 == should format ==
 ENV   MY_NAME="John Doe"
-ENV   MY_CAT=fluffy
+ENV   MY_CAT=fluffy    Test=asdf
 ENV    MY_NAME="John Doe"   MY_DOG=RexTheDog \
      MY_CAT=fluffy
 
 [expect]
 ENV MY_NAME="John Doe"
-ENV MY_CAT=fluffy
+ENV MY_CAT=fluffy Test=asdf
 ENV MY_NAME="John Doe" \
     MY_DOG=RexTheDog \
     MY_CAT=fluffy

@@ -1,10 +1,29 @@
-== should format multiple labels on multiple lines ==
+~~ lineWidth: 50 ~~
+== should format a single label ==
+LABEL some.label="value1"
+LABEL some.label2="with some text that goes over limit"
+
+[expect]
+LABEL some.label="value1"
+LABEL some.label2="with some text that goes over limit"
+
+== should format multiple labels on multiple lines when exceeding width ==
+LABEL multi="value1" label="value2"
 LABEL multi.label="value1" multi.label2="value2" other="value3"
 
 [expect]
+LABEL multi="value1" label="value2"
 LABEL multi.label="value1" \
       multi.label2="value2" \
       other="value3"
+
+== should keep on multiple lines when could collapse ==
+LABEL multi="value1" \
+      label="value2"
+
+[expect]
+LABEL multi="value1" \
+      label="value2"
 
 == should format with quotes ==
 LABEL "com.example.vendor"="ACME Incorporated"

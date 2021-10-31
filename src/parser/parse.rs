@@ -7,7 +7,7 @@ use super::helpers::*;
 use crate::configuration::Configuration;
 
 pub fn parse_items(file: &Dockerfile, text: &str, config: &Configuration) -> PrintItems {
-  let mut context = Context::new(text, config);
+  let mut context = Context::new(text, file, config);
   let mut items = PrintItems::new();
   let top_level_nodes = context.parse_nodes_with_comments(0, text.len(), file.instructions.iter().map(|i| i.into()));
 
@@ -158,23 +158,61 @@ fn parse_label<'a>(node: &'a Label, context: &mut Context<'a>) -> PrintItems {
 }
 
 fn parse_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &mut Context<'a>) -> PrintItems {
-  let mut items = PrintItems::new();
   let count = nodes.len();
-  for (i, node) in nodes.into_iter().enumerate() {
-    let is_comment = node.is_comment();
-    let mut node_items = parse_node(node, context);
-    if i < count - 1 && !is_comment {
-      node_items.push_str(" \\");
-      node_items.push_signal(Signal::NewLine);
-    }
+  let nodes_with_line_index = nodes
+    .into_iter()
+    .map(|node| {
+      let (line_index, _) = node.span().relative_span(context.dockerfile);
+      (node, line_index)
+    })
+    .collect::<Vec<_>>();
+  let force_use_new_lines = nodes_with_line_index.len() > 1 && nodes_with_line_index[0].1 < nodes_with_line_index[1].1;
 
-    if i > 0 {
-      items.extend(parser_helpers::with_indent_times(node_items, indent_width));
-    } else {
-      items.extend(node_items);
-    }
-  }
-  items
+  parser_helpers::parse_separated_values(
+    |is_multiline| {
+      nodes_with_line_index
+        .into_iter()
+        .enumerate()
+        .map(|(i, (node, line_index))| {
+          let is_comment = node.is_comment();
+          let mut node_items = parse_node(node, context);
+          if i < count - 1 && !is_comment {
+            node_items.push_condition(conditions::if_true("endLineText", is_multiline.create_resolver(), {
+              let mut items = PrintItems::new();
+              items.push_str(" \\");
+              items
+            }));
+          }
+
+          parser_helpers::ParsedValue {
+            items: if i > 0 {
+              parser_helpers::with_indent_times(node_items, indent_width)
+            } else {
+              node_items
+            },
+            lines_span: Some(parser_helpers::LinesSpan {
+              start_line: line_index,
+              end_line: line_index,
+            }),
+            allow_inline_multi_line: false,
+            allow_inline_single_line: false,
+          }
+        })
+        .collect()
+    },
+    parser_helpers::ParseSeparatedValuesOptions {
+      prefer_hanging: false,
+      force_use_new_lines,
+      allow_blank_lines: false,
+      single_line_space_at_start: false,
+      single_line_space_at_end: false,
+      single_line_separator: Signal::SpaceOrNewLine.into(),
+      indent_width: 0 as u8,
+      multi_line_options: parser_helpers::MultiLineOptions::same_line_no_indent(),
+      force_possible_newline_at_start: false,
+    },
+  )
+  .items
 }
 
 fn parse_misc_instruction<'a>(node: &'a MiscInstruction, context: &mut Context<'a>) -> PrintItems {
