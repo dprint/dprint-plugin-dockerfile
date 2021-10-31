@@ -2,7 +2,7 @@
 name = "dprint-plugin-dockerfile"
 version = "0.1.1"
 authors = ["David Sherret <dsherret@gmail.com>"]
-edition = "2018"
+edition = "2021"
 homepage = "https://github.com/dprint/dprint-plugin-dockerfile"
 keywords = ["formatting", "formatter", "docker", "dockerfile"]
 license = "MIT"
@@ -26,7 +26,7 @@ tracing = ["dprint-core/tracing"]
 
 [dependencies]
 dockerfile-parser = { git = "https://github.com/dsherret/dockerfile-parser-rs", branch = "span-for-nodes" }
-dprint-core = { version = "0.46.4", features = ["formatting"] }
+dprint-core = { version = "0.47.0", features = ["formatting"] }
 serde = { version = "1.0.88", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 
