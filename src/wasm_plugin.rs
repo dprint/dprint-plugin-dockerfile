@@ -26,7 +26,7 @@ impl PluginHandler<Configuration> for DockerfilePluginHandler {
       version: version.clone(),
       config_key: "dockerfile".to_string(),
       file_extensions: vec!["dockerfile".to_string()],
-      file_names: vec![],
+      file_names: vec!["Dockerfile".to_string()],
       help_url: "https://dprint.dev/plugins/dockerfile".to_string(),
       config_schema_url: format!("https://plugins.dprint.dev/schemas/dockerfile-{}.json", version),
     }
