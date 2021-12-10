@@ -15,7 +15,7 @@ pub struct Context<'a> {
   pub handled_comments: HashSet<usize>,
   current_node: Option<Node<'a>>,
   parent_stack: Vec<Node<'a>>,
-  pub parse_string_content: bool,
+  pub gen_string_content: bool,
 }
 
 impl<'a> Context<'a> {
@@ -27,7 +27,7 @@ impl<'a> Context<'a> {
       handled_comments: HashSet::new(),
       current_node: None,
       parent_stack: Vec::new(),
-      parse_string_content: false,
+      gen_string_content: false,
     }
   }
 
@@ -50,7 +50,7 @@ impl<'a> Context<'a> {
     self.parent_stack.last()
   }
 
-  pub fn parse_nodes_with_comments(&mut self, start_pos: usize, end_pos: usize, nodes: impl Iterator<Item = Node<'a>>) -> Vec<Node<'a>> {
+  pub fn gen_nodes_with_comments(&mut self, start_pos: usize, end_pos: usize, nodes: impl Iterator<Item = Node<'a>>) -> Vec<Node<'a>> {
     let mut result = Vec::new();
     let mut last_pos = start_pos;
     for node in nodes {

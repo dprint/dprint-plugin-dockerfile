@@ -1,7 +1,7 @@
+use anyhow::Result;
 use dprint_core::configuration::{ConfigKeyMap, GlobalConfiguration, ResolveConfigurationResult};
 use dprint_core::generate_plugin_code;
 use dprint_core::plugins::{PluginHandler, PluginInfo};
-use dprint_core::types::ErrBox;
 use std::path::Path;
 
 use super::configuration::{resolve_config, Configuration};
@@ -41,8 +41,8 @@ impl PluginHandler<Configuration> for DockerfilePluginHandler {
     file_path: &Path,
     file_text: &str,
     config: &Configuration,
-    _format_with_host: impl FnMut(&Path, String, &ConfigKeyMap) -> Result<String, ErrBox>,
-  ) -> Result<String, ErrBox> {
+    _format_with_host: impl FnMut(&Path, String, &ConfigKeyMap) -> Result<String>,
+  ) -> Result<String> {
     super::format_text(file_path, file_text, config)
   }
 }

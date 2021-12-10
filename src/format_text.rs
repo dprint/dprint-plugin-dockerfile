@@ -1,17 +1,17 @@
+use anyhow::Result;
 use dockerfile_parser::Dockerfile;
 use dprint_core::configuration::resolve_new_line_kind;
 use dprint_core::formatting::PrintOptions;
-use dprint_core::types::ErrBox;
 use std::path::Path;
 
 use crate::configuration::Configuration;
-use crate::parser::parse_items;
+use crate::generation::generate;
 
-pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> Result<String, ErrBox> {
+pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> Result<String> {
   let node = parse_node(text)?;
 
   Ok(dprint_core::formatting::format(
-    || parse_items(&node, text, config),
+    || generate(&node, text, config),
     config_to_print_options(text, config),
   ))
 }
@@ -20,10 +20,10 @@ pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> Res
 pub fn trace_file(_file_path: &Path, text: &str, config: &Configuration) -> dprint_core::formatting::TracingResult {
   let node = parse_node(text).unwrap();
 
-  dprint_core::formatting::trace_printing(|| parse_items(node, text, config), config_to_print_options(text, config))
+  dprint_core::formatting::trace_printing(|| generate(node, text, config), config_to_print_options(text, config))
 }
 
-fn parse_node(text: &str) -> Result<Dockerfile, ErrBox> {
+fn parse_node(text: &str) -> Result<Dockerfile> {
   Ok(Dockerfile::parse(text)?)
 }
 
