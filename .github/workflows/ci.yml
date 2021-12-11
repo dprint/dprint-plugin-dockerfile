@@ -79,10 +79,9 @@ jobs:
       if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
       run: cargo login ${{ secrets.CRATES_TOKEN }}
 
-    # todo: enable once the parser is published
-    # - name: Cargo publish
-    #  if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
-    #  run: cargo publish
+    - name: Cargo publish
+      if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
+      run: cargo publish
 
       # GITHUB RELEASE
     - name: Pre-release
@@ -140,14 +139,13 @@ jobs:
         repository: dprint/plugins
         token: ${{ secrets.CI_REPO_PAT }} # github.token is scoped to current repo, so use this to push to other repo
         path: dprint-plugins
-    # todo: enable once adding this to dprint init
-    #- name: Plugin publish
-    #  if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
-    #  run: |
-    #      cd dprint-plugins
-    #      node scripts/replace-plugin.js dprint-plugin-dockerfile ${{ steps.get_tag_version.outputs.TAG_VERSION }} dockerfile-${{ steps.get_tag_version.outputs.TAG_VERSION }}
-    #      git add .
-    #      git config user.name "David Sherret"
-    #      git config user.email "dsherret@users.noreply.github.com"
-    #      git commit -m "dprint-plugin-dockerfile ${{ steps.get_tag_version.outputs.TAG_VERSION }}"
-    #      git push origin main
+    - name: Plugin publish
+      if: matrix.config.kind == 'test_release' && startsWith(github.ref, 'refs/tags/')
+      run: |
+         cd dprint-plugins
+         node scripts/replace-plugin.js dprint-plugin-dockerfile ${{ steps.get_tag_version.outputs.TAG_VERSION }} dockerfile-${{ steps.get_tag_version.outputs.TAG_VERSION }}
+         git add .
+         git config user.name "David Sherret"
+         git config user.email "dsherret@users.noreply.github.com"
+         git commit -m "dprint-plugin-dockerfile ${{ steps.get_tag_version.outputs.TAG_VERSION }}"
+         git push origin main
