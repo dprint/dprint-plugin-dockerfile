@@ -1,6 +1,6 @@
 [package]
 name = "dprint-plugin-dockerfile"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["David Sherret <dsherret@gmail.com>"]
 edition = "2021"
 homepage = "https://github.com/dprint/dprint-plugin-dockerfile"
