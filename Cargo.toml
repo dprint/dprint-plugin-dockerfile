@@ -26,11 +26,11 @@ tracing = ["dprint-core/tracing"]
 
 [dependencies]
 anyhow = "1.0.51"
-dockerfile-parser = "0.8.0-alpha.1"
-dprint-core = { version = "0.50.0", features = ["formatting"] }
+dockerfile-parser = "0.8.0"
+dprint-core = { version = "0.54.1", features = ["formatting"] }
 serde = { version = "1.0.88", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 
 [dev-dependencies]
-dprint-development = "0.5.0"
+dprint-development = "0.8.0"
 serde_json = { version = "1.0" }
