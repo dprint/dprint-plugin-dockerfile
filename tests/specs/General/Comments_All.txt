@@ -20,6 +20,12 @@ world
 
 # comment
 
+== should format empty comment ==
+#
+
+[expect]
+#
+
 == should handle leading whitespace before a comment ==
   # leading whitespace is a comment
   RUN test
@@ -37,3 +43,15 @@ ENV MY_NAME="John Doe" \
 ENV MY_NAME="John Doe" \
     # testing
     MY_DOG=RexTheDog
+
+== should handle multiple comment chars ==
+## testing
+###test
+####  test
+#####
+
+[expect]
+## testing
+### test
+#### test
+#####

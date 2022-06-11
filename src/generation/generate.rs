@@ -329,6 +329,23 @@ fn gen_comment<'a>(comment: &SpannedComment, context: &mut Context<'a>) -> Print
 }
 
 fn gen_comment_text(text: &str) -> PrintItems {
-  let text_start = text.char_indices().skip_while(|(_, c)| *c == '#').next().map(|(index, _)| index).unwrap_or(0);
-  format!("#{} {}", &text[1..text_start], &text[text_start..].trim()).into()
+  // For some reason the parser returns an empty text for empty comments,
+  // but for other comments it returns with a leading # char
+  if text.trim().is_empty() {
+    return "#".into();
+  }
+
+  let text_start = text
+    .char_indices()
+    .skip_while(|(_, c)| *c == '#')
+    .next()
+    .map(|(index, _)| index)
+    .unwrap_or(text.len());
+  let comment_chars = &text[1..text_start];
+  let end_text = &text[text_start..].trim();
+  if end_text.is_empty() {
+    format!("#{}", comment_chars).into()
+  } else {
+    format!("#{} {}", comment_chars, end_text).into()
+  }
 }
