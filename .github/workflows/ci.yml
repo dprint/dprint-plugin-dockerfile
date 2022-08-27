@@ -19,12 +19,8 @@ jobs:
       RUST_BACKTRACE: full
 
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: 1.56.0
-        override: true
+    - uses: actions/checkout@v3
+    - uses: dtolnay/rust-toolchain@stable
     - uses: Swatinem/rust-cache@v1
 
     - name: Install wasm32 target
@@ -54,7 +50,7 @@ jobs:
     - uses: actions/setup-node@v2
       if: matrix.config.kind == 'test_release'
       with:
-        node-version: '14.x'
+        node-version: '16.x'
         registry-url: 'https://registry.npmjs.org'
 
     - name: Setup and test npm deployment
