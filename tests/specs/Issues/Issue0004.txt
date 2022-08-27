@@ -1,0 +1,15 @@
+== should be stable ==
+FROM ubuntu:22.04
+
+RUN "ls"
+
+RUN "ls" -l
+RUN "ls" "-l"
+
+[expect]
+FROM ubuntu:22.04
+
+RUN "ls"
+
+RUN "ls" -l
+RUN "ls" "-l"

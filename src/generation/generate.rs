@@ -251,8 +251,8 @@ fn gen_string_array<'a>(node: &'a StringArray, context: &mut Context<'a>) -> Pri
 fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   let is_parent_env_var = matches!(context.parent(), Some(Node::EnvVar(_)));
-  let is_quoted = context.span_text(&node.span).starts_with("\"");
-  let use_quotes = is_quoted || is_parent_env_var && context.span_text(&node.span).contains(' ');
+  let span_text = context.span_text(&node.span);
+  let use_quotes = is_parent_env_var && span_text.contains(' ');
   let previous_gen_string_content = context.gen_string_content;
   context.gen_string_content = use_quotes;
 
