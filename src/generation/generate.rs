@@ -44,6 +44,7 @@ fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
     Node::Env(node) => gen_env_instruction(node, context),
     Node::EnvVar(node) => gen_env_var(node, context),
     Node::From(node) => gen_from_instruction(node, context),
+    Node::FromFlag(node) => gen_from_flag(node, context),
     Node::Label(node) => gen_label_instruction(node, context),
     Node::LabelLabel(node) => gen_label(node, context),
     Node::Misc(node) => gen_misc_instruction(node, context),
@@ -126,14 +127,26 @@ fn gen_env_var<'a>(node: &'a EnvVar, context: &mut Context<'a>) -> PrintItems {
 }
 
 fn gen_from_instruction<'a>(node: &'a FromInstruction, context: &mut Context<'a>) -> PrintItems {
-  // todo: handle --platform flag https://github.com/HewlettPackard/dockerfile-parser-rs/issues/18
   let mut items = PrintItems::new();
   items.push_str("FROM ");
+  for flag in &node.flags {
+    items.extend(gen_node(flag.into(), context));
+    items.push_str(" ");
+  }
   items.extend(gen_node((&node.image).into(), context));
   if let Some(alias) = &node.alias {
     items.push_str(" AS ");
     items.extend(gen_node(alias.into(), context));
   }
+  items
+}
+
+fn gen_from_flag<'a>(node: &'a FromFlag, context: &mut Context<'a>) -> PrintItems {
+  let mut items = PrintItems::new();
+  items.push_str("--");
+  items.extend(gen_node((&node.name).into(), context));
+  items.push_str("=");
+  items.extend(gen_node((&node.value).into(), context));
   items
 }
 

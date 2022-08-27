@@ -13,3 +13,11 @@ FROM  test@digest
 
 [expect]
 FROM test@digest
+
+== should parse platform ==
+FROM   --platform=linux/amd64  node:lts-alpine
+FROM   --platform=linux/amd64    --platform=something  node:lts-alpine
+
+[expect]
+FROM --platform=linux/amd64 node:lts-alpine
+FROM --platform=linux/amd64 --platform=something node:lts-alpine

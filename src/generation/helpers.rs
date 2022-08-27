@@ -28,6 +28,7 @@ create_node_ref!(
   Copy(CopyInstruction),
   CopyFlag(CopyFlag),
   From(FromInstruction),
+  FromFlag(FromFlag),
   Label(LabelInstruction),
   LabelLabel(Label),
   Run(RunInstruction),
@@ -47,6 +48,7 @@ impl<'a> Node<'a> {
     use Node::*;
     match self {
       From(node) => node.span,
+      FromFlag(node) => node.span,
       Arg(node) => node.span,
       Label(node) => node.span,
       LabelLabel(node) => node.span,
