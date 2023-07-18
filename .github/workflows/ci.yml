@@ -21,7 +21,9 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - uses: dtolnay/rust-toolchain@stable
-    - uses: Swatinem/rust-cache@v1
+    - uses: Swatinem/rust-cache@v2
+      with:
+        save-if: ${{ github.ref == 'refs/heads/main' }}
 
     - name: Install wasm32 target
       if: matrix.config.kind == 'test_release'
@@ -50,7 +52,7 @@ jobs:
     - uses: actions/setup-node@v2
       if: matrix.config.kind == 'test_release'
       with:
-        node-version: '16.x'
+        node-version: '18.x'
         registry-url: 'https://registry.npmjs.org'
 
     - name: Setup and test npm deployment
@@ -104,17 +106,13 @@ jobs:
           Then in your project's dprint configuration file:
 
           1. Specify the plugin url in the `"plugins"` array.
-          2. Ensure `.dockerfile` file extensions are matched in an `"includes"` pattern.
-          3. Add a `"dockerfile"` configuration property if desired.
+          2. Add a `"dockerfile"` configuration property if desired.
              ```jsonc
              {
                // ...etc...
                "dockerfile": {
                  // config goes here
                },
-               "includes": [
-                 "**/*.{dockerfile}"
-               ],
                "plugins": [
                  "https://plugins.dprint.dev/dockerfile-${{ steps.get_tag_version.outputs.TAG_VERSION }}.wasm"
                ]
