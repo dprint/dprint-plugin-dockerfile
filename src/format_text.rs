@@ -2,13 +2,12 @@ use anyhow::Result;
 use dockerfile_parser::Dockerfile;
 use dprint_core::configuration::resolve_new_line_kind;
 use dprint_core::formatting::PrintOptions;
-use dprint_core::plugins::FormatResult;
 use std::path::Path;
 
 use crate::configuration::Configuration;
 use crate::generation::generate;
 
-pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> FormatResult {
+pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> Result<Option<String>> {
   let node = parse_node(text)?;
 
   let result = dprint_core::formatting::format(|| generate(&node, text, config), config_to_print_options(text, config));
