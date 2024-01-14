@@ -5,8 +5,8 @@ use dprint_core::generate_plugin_code;
 use dprint_core::plugins::FileMatchingInfo;
 use dprint_core::plugins::FormatResult;
 use dprint_core::plugins::PluginInfo;
-use dprint_core::plugins::SyncPluginInfo;
 use dprint_core::plugins::SyncPluginHandler;
+use dprint_core::plugins::SyncPluginInfo;
 use std::path::Path;
 
 use super::configuration::resolve_config;

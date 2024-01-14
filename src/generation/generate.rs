@@ -1,6 +1,6 @@
 use dockerfile_parser::*;
-use dprint_core::formatting::ir_helpers::SingleLineOptions;
 use dprint_core::formatting::ir_helpers::gen_from_raw_string;
+use dprint_core::formatting::ir_helpers::SingleLineOptions;
 use dprint_core::formatting::*;
 
 use super::context::Context;

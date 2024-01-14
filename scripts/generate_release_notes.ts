@@ -2,7 +2,7 @@ import { generateChangeLog } from "https://raw.githubusercontent.com/dprint/auto
 
 const version = Deno.args[0];
 const changelog = await generateChangeLog({
-  versionTo: version,
+    versionTo: version,
 });
 const text = `## Changes
 
