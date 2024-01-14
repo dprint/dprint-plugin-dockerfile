@@ -1,4 +1,5 @@
 use dockerfile_parser::*;
+use dprint_core::formatting::ir_helpers::SingleLineOptions;
 use dprint_core::formatting::ir_helpers::gen_from_raw_string;
 use dprint_core::formatting::*;
 
@@ -217,9 +218,11 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
       prefer_hanging: false,
       force_use_new_lines,
       allow_blank_lines: false,
-      single_line_space_at_start: false,
-      single_line_space_at_end: false,
-      single_line_separator: Signal::SpaceOrNewLine.into(),
+      single_line_options: SingleLineOptions {
+        space_at_start: false,
+        space_at_end: false,
+        separator: Signal::SpaceOrNewLine.into(),
+      },
       indent_width: 0 as u8,
       multi_line_options: ir_helpers::MultiLineOptions::same_line_no_indent(),
       force_possible_newline_at_start: false,

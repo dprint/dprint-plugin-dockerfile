@@ -2,6 +2,7 @@ use dprint_core::configuration::ConfigKeyMap;
 use dprint_core::configuration::GlobalConfiguration;
 use dprint_core::configuration::ResolveConfigurationResult;
 use dprint_core::generate_plugin_code;
+use dprint_core::plugins::FileMatchingInfo;
 use dprint_core::plugins::FormatResult;
 use dprint_core::plugins::PluginInfo;
 use dprint_core::plugins::SyncPluginHandler;
@@ -23,11 +24,13 @@ impl SyncPluginHandler<Configuration> for DockerfilePluginHandler {
       name: env!("CARGO_PKG_NAME").to_string(),
       version: version.clone(),
       config_key: "dockerfile".to_string(),
-      file_extensions: vec!["dockerfile".to_string()],
-      file_names: vec!["Dockerfile".to_string()],
       help_url: "https://dprint.dev/plugins/dockerfile".to_string(),
       config_schema_url: format!("https://plugins.dprint.dev/dprint/dprint-plugin-dockerfile/{}/schema.json", version),
       update_url: Some("https://plugins.dprint.dev/dprint/dprint-plugin-dockerfile/latest.json".to_string()),
+      file_matching: FileMatchingInfo {
+        file_extensions: vec!["dockerfile".to_string()],
+        file_names: vec!["Dockerfile".to_string()],
+      },
     }
   }
 
