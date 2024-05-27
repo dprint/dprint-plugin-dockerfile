@@ -1,4 +1,5 @@
 /target
 deployment/npm/buffer.generated.js
 deployment/npm/node_modules
+deployment/npm/plugin.wasm
 .vscode
