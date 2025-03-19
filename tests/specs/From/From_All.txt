@@ -8,11 +8,11 @@ FROM base:${CODE_VERSION}
 FROM test:tag
 FROM test AS alias
 
-== should format with digest -- todo: needs to be supported in parser (skip) ==
-FROM  test@digest
+== should format with digest ==
+FROM  test@sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 [expect]
-FROM test@digest
+FROM test@sha256:0000000000000000000000000000000000000000000000000000000000000000
 
 == should parse platform ==
 FROM   --platform=linux/amd64  node:lts-alpine
