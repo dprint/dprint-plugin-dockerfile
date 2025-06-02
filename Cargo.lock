@@ -86,9 +86,9 @@ checksum = "fea41bba32d969b513997752735605054bc0dfa92b4c56bf1189f2e174be7a10"
 
 [[package]]
 name = "dockerfile-parser"
-version = "0.9.0-alpha.1"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d70eab0528ad5201c8fab417b733cb31fc80ef58ff3b82f4bb6c418d09afb2f"
+checksum = "aa53f9cb1532d7d7c19e269848ede84d7c80d59264c658469f0051a1d88c2780"
 dependencies = [
  "enquote",
  "lazy_static",
