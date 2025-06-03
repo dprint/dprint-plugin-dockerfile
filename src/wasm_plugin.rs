@@ -32,7 +32,7 @@ impl SyncPluginHandler<Configuration> for DockerfilePluginHandler {
       },
       file_matching: FileMatchingInfo {
         file_extensions: vec!["dockerfile".to_string()],
-        file_names: vec!["Dockerfile".to_string()],
+        file_names: vec!["Dockerfile".to_string(), "Dockerfile.*".to_string()],
       },
     }
   }
