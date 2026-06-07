@@ -87,16 +87,29 @@ fn gen_cmd_instruction<'a>(node: &'a CmdInstruction, context: &mut Context<'a>) 
 
 fn gen_copy_instruction<'a>(node: &'a CopyInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("COPY ");
-  for flag in node.flags.iter() {
-    items.extend(gen_node(flag.into(), context));
-    items.push_str(" ");
+  let prefix_str = "COPY ";
+  items.push_str(prefix_str);
+
+  let value_nodes = node
+    .flags
+    .iter()
+    .map(|flag| flag.into())
+    .chain(node.sources.iter().map(|source| source.into()))
+    .chain(std::iter::once((&node.destination).into()));
+  let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, value_nodes);
+
+  if nodes.iter().any(|node| node.is_comment()) {
+    // preserve comments by breaking onto multiple lines, aligned with the arguments
+    items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
+  } else {
+    // keep everything on a single line
+    for (i, node) in nodes.into_iter().enumerate() {
+      if i > 0 {
+        items.push_str(" ");
+      }
+      items.extend(gen_node(node, context));
+    }
   }
-  for source in node.sources.iter() {
-    items.extend(gen_node(source.into(), context));
-    items.push_str(" ");
-  }
-  items.extend(gen_node((&node.destination).into(), context));
   items
 }
 
@@ -180,7 +193,8 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
       (node, line_index)
     })
     .collect::<Vec<_>>();
-  let force_use_new_lines = nodes_with_line_index.len() > 1 && nodes_with_line_index[0].1 < nodes_with_line_index[1].1;
+  let force_use_new_lines = nodes_with_line_index.len() > 1
+    && (nodes_with_line_index[0].1 < nodes_with_line_index[1].1 || nodes_with_line_index.iter().any(|(node, _)| node.is_comment()));
 
   ir_helpers::gen_separated_values(
     |is_multiline| {
@@ -276,6 +290,14 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
     items.push_str("\"");
   }
   for (i, component) in node.components.iter().enumerate() {
+    // comments lose their leading whitespace when parsed, so align them
+    // with the surrounding arguments by reusing their indentation
+    if matches!(component, BreakableStringComponent::Comment(_)) {
+      let indentation = comment_indentation(&node.components, i);
+      if !indentation.is_empty() {
+        items.extend(indentation.to_string().into());
+      }
+    }
     items.extend(gen_node(component.into(), context));
     if i < node.components.len() - 1 {
       if let BreakableStringComponent::String(text) = component {
@@ -294,6 +316,27 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
 
   context.gen_string_content = previous_gen_string_content;
   items
+}
+
+/// Determines the indentation to use for a comment within a breakable string by
+/// reusing the leading whitespace of the closest surrounding string component.
+fn comment_indentation(components: &[BreakableStringComponent], index: usize) -> &str {
+  let following = components[index + 1..].iter().find_map(string_leading_whitespace);
+  if let Some(whitespace) = following {
+    return whitespace;
+  }
+  components[..index]
+    .iter()
+    .rev()
+    .find_map(string_leading_whitespace)
+    .unwrap_or("")
+}
+
+fn string_leading_whitespace(component: &BreakableStringComponent) -> Option<&str> {
+  match component {
+    BreakableStringComponent::String(s) => Some(&s.content[..s.content.len() - s.content.trim_start().len()]),
+    _ => None,
+  }
 }
 
 fn gen_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintItems {

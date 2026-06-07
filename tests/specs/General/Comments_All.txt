@@ -55,3 +55,103 @@ ENV MY_NAME="John Doe" \
 ### test
 #### test
 #####
+
+== should keep comments aligned in run ==
+RUN exmaple \
+    -something=exmaple \
+    # Some comment
+    -Test=534324 \
+    build
+
+[expect]
+RUN exmaple \
+    -something=exmaple \
+    # Some comment
+    -Test=534324 \
+    build
+
+== should align a trailing comment in run with the previous argument ==
+RUN echo foo \
+    bar \
+    # trailing comment
+
+[expect]
+RUN echo foo \
+    bar \
+    # trailing comment
+
+== should align multiple trailing comments in run with the previous argument ==
+RUN echo foo \
+    bar \
+    # comment one
+    # comment two
+
+[expect]
+RUN echo foo \
+    bar \
+    # comment one
+    # comment two
+
+== should align multiple consecutive comments in run with the following argument ==
+RUN echo foo \
+    # comment one
+    # comment two
+    bar
+
+[expect]
+RUN echo foo \
+    # comment one
+    # comment two
+    bar
+
+== should keep run comments at column zero when arguments are not indented ==
+RUN echo foo \
+# comment
+bar
+
+[expect]
+RUN echo foo \
+# comment
+bar
+
+== should align a run comment with the following argument ignoring its own indentation ==
+RUN echo foo \
+  arg1 \
+        # comment
+    arg2
+
+[expect]
+RUN echo foo \
+  arg1 \
+    # comment
+    arg2
+
+== should align an empty comment in run with the arguments ==
+RUN echo foo \
+    #
+    bar
+
+[expect]
+RUN echo foo \
+    #
+    bar
+
+== should normalize comment chars and spacing while keeping run alignment ==
+RUN echo foo \
+    ##weird   comment
+    bar
+
+[expect]
+RUN echo foo \
+    ## weird   comment
+    bar
+
+== should align a comment after the first argument in run ==
+RUN echo foo \
+    # comment
+    bar
+
+[expect]
+RUN echo foo \
+    # comment
+    bar
