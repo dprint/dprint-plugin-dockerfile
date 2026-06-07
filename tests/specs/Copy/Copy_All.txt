@@ -5,3 +5,68 @@ COPY  arr[[]0].txt    /mydir/
 [expect]
 COPY --chown=user:group --from=test source1 source2 destination/
 COPY arr[[]0].txt /mydir/
+
+== should collapse a multi-line copy without comments to a single line ==
+COPY foo \
+    bar /dest
+
+[expect]
+COPY foo bar /dest
+
+== should keep a comment in copy and align it with the arguments ==
+COPY foo \
+    # a comment
+    bar /dest
+
+[expect]
+COPY foo \
+     # a comment
+     bar \
+     /dest
+
+== should keep a comment before the destination in copy ==
+COPY foo bar \
+    # comment
+    /dest
+
+[expect]
+COPY foo \
+     bar \
+     # comment
+     /dest
+
+== should keep a comment in copy with a flag ==
+COPY --chown=user:group foo \
+    # comment
+    bar dest/
+
+[expect]
+COPY --chown=user:group \
+     foo \
+     # comment
+     bar \
+     dest/
+
+== should normalize and align a comment in copy regardless of its indentation ==
+COPY foo \
+        ##comment
+    bar /dest
+
+[expect]
+COPY foo \
+     ## comment
+     bar \
+     /dest
+
+== should keep multiple comments in copy ==
+COPY foo \
+    # comment one
+    # comment two
+    bar /dest
+
+[expect]
+COPY foo \
+     # comment one
+     # comment two
+     bar \
+     /dest
