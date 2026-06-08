@@ -21,17 +21,17 @@ overflow-checks = false
 panic = "abort"
 
 [features]
-wasm = ["anyhow", "serde_json", "dprint-core/wasm"]
+wasm = ["serde_json", "dprint-core/wasm"]
 tracing = ["dprint-core/tracing"]
 
 [dependencies]
-anyhow = { version = "1.0.62", optional = true }
-dprint-core = { version = "0.65.0", features = ["formatting"] }
+dprint-core = { version = "0.68.1", features = ["formatting"], default-features = false }
+dprint-core-macros = "0.1.0"
 monch = "0.6.0"
 serde = { version = "1.0.144", features = ["derive"] }
 serde_json = { version = "1.0", optional = true }
 thiserror = "2"
 
 [dev-dependencies]
-dprint-development = "0.9.5"
+dprint-development = "0.11.0"
 serde_json = { version = "1.0" }
