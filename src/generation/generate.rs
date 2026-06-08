@@ -1,6 +1,7 @@
 use dprint_core::formatting::ir_helpers::SingleLineOptions;
 use dprint_core::formatting::ir_helpers::gen_from_raw_string;
 use dprint_core::formatting::*;
+use dprint_core_macros::sc;
 
 use super::context::Context;
 use super::helpers::*;
@@ -66,11 +67,11 @@ fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
 fn gen_arg_instruction<'a>(node: &'a ArgInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
 
-  items.push_str("ARG ");
+  items.push_sc(sc!("ARG "));
   items.extend(gen_node((&node.name).into(), context));
 
   if let Some(value) = &node.value {
-    items.push_str("=");
+    items.push_sc(sc!("="));
     items.extend(gen_node(value.into(), context));
   }
 
@@ -79,7 +80,7 @@ fn gen_arg_instruction<'a>(node: &'a ArgInstruction, context: &mut Context<'a>) 
 
 fn gen_cmd_instruction<'a>(node: &'a CmdInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("CMD ");
+  items.push_sc(sc!("CMD "));
   items.extend(match &node.expr {
     ShellOrExecExpr::Exec(node) => gen_node(node.into(), context),
     ShellOrExecExpr::Shell(node) => gen_node(node.into(), context),
@@ -89,14 +90,14 @@ fn gen_cmd_instruction<'a>(node: &'a CmdInstruction, context: &mut Context<'a>) 
 
 fn gen_copy_instruction<'a>(node: &'a CopyInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  let prefix_str = "COPY ";
-  items.push_str(prefix_str);
+  let prefix = sc!("COPY ");
+  items.push_sc(prefix);
 
   match &node.args {
     CopyArgs::Exec(array) => {
       for flag in &node.flags {
         items.extend(gen_node(flag.into(), context));
-        items.push_str(" ");
+        items.push_sc(sc!(" "));
       }
       items.extend(gen_node(array.into(), context));
     }
@@ -111,12 +112,12 @@ fn gen_copy_instruction<'a>(node: &'a CopyInstruction, context: &mut Context<'a>
 
       if nodes.iter().any(|node| node.is_comment()) {
         // preserve comments by breaking onto multiple lines, aligned with the arguments
-        items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
+        items.extend(gen_multi_line_items(nodes, prefix.text.chars().count() as u32, context));
       } else {
         // keep everything on a single line
         for (i, node) in nodes.into_iter().enumerate() {
           if i > 0 {
-            items.push_str(" ");
+            items.push_sc(sc!(" "));
           }
           items.extend(gen_node(node, context));
         }
@@ -128,7 +129,7 @@ fn gen_copy_instruction<'a>(node: &'a CopyInstruction, context: &mut Context<'a>
 
 fn gen_entrypoint_instruction<'a>(node: &'a EntrypointInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("ENTRYPOINT ");
+  items.push_sc(sc!("ENTRYPOINT "));
   items.extend(match &node.expr {
     ShellOrExecExpr::Exec(node) => gen_node(node.into(), context),
     ShellOrExecExpr::Shell(node) => gen_node(node.into(), context),
@@ -139,30 +140,30 @@ fn gen_entrypoint_instruction<'a>(node: &'a EntrypointInstruction, context: &mut
 fn gen_env_instruction<'a>(node: &'a EnvInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, false, node.vars.iter().map(|i| i.into()));
-  let prefix_str = "ENV ";
-  items.push_str(prefix_str);
-  items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
+  let prefix = sc!("ENV ");
+  items.push_sc(prefix);
+  items.extend(gen_multi_line_items(nodes, prefix.text.chars().count() as u32, context));
   items
 }
 
 fn gen_env_var<'a>(node: &'a EnvVar, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.extend(gen_node((&node.key).into(), context));
-  items.push_str("=");
+  items.push_sc(sc!("="));
   items.extend(gen_node((&node.value).into(), context));
   items
 }
 
 fn gen_from_instruction<'a>(node: &'a FromInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("FROM ");
+  items.push_sc(sc!("FROM "));
   for flag in &node.flags {
     items.extend(gen_node(flag.into(), context));
-    items.push_str(" ");
+    items.push_sc(sc!(" "));
   }
   items.extend(gen_node((&node.image).into(), context));
   if let Some(alias) = &node.alias {
-    items.push_str(" AS ");
+    items.push_sc(sc!(" AS "));
     items.extend(gen_node(alias.into(), context));
   }
   items
@@ -170,27 +171,27 @@ fn gen_from_instruction<'a>(node: &'a FromInstruction, context: &mut Context<'a>
 
 fn gen_from_flag<'a>(node: &'a FromFlag, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("--");
+  items.push_sc(sc!("--"));
   items.extend(gen_node((&node.name).into(), context));
-  items.push_str("=");
+  items.push_sc(sc!("="));
   items.extend(gen_node((&node.value).into(), context));
   items
 }
 
 fn gen_label_instruction<'a>(node: &'a LabelInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  let prefix_str = "LABEL ";
-  items.push_str(prefix_str);
+  let prefix = sc!("LABEL ");
+  items.push_sc(prefix);
   // route through gen_nodes_with_comments so comments between labels are kept
   let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, false, node.labels.iter().map(|l| l.into()));
-  items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
+  items.extend(gen_multi_line_items(nodes, prefix.text.chars().count() as u32, context));
   items
 }
 
 fn gen_label<'a>(node: &'a Label, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.extend(gen_node((&node.name).into(), context));
-  items.push_str("=");
+  items.push_sc(sc!("="));
   items.extend(gen_node((&node.value).into(), context));
   items
 }
@@ -219,7 +220,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
           if i < count - 1 && !is_comment {
             node_items.push_condition(conditions::if_true("endLineText", is_multiline.create_resolver(), {
               let mut items = PrintItems::new();
-              items.push_str(space_continuation);
+              items.push_sc(space_continuation);
               items
             }));
           }
@@ -260,7 +261,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
 fn gen_misc_instruction<'a>(node: &'a MiscInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.extend(gen_node((&node.instruction).into(), context));
-  items.push_str(" ");
+  items.push_sc(sc!(" "));
   items.extend(gen_node((&node.arguments).into(), context));
   items
 }
@@ -268,7 +269,7 @@ fn gen_misc_instruction<'a>(node: &'a MiscInstruction, context: &mut Context<'a>
 fn gen_run_instruction<'a>(node: &'a RunInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
 
-  items.push_str("RUN ");
+  items.push_sc(sc!("RUN "));
   items.extend(match &node.expr {
     ShellOrExecExpr::Exec(node) => gen_node(node.into(), context),
     ShellOrExecExpr::Shell(node) => gen_node(node.into(), context),
@@ -279,7 +280,7 @@ fn gen_run_instruction<'a>(node: &'a RunInstruction, context: &mut Context<'a>) 
 
 fn gen_shell_instruction<'a>(node: &'a ShellInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("SHELL ");
+  items.push_sc(sc!("SHELL "));
   items.extend(match &node.expr {
     ShellOrExecExpr::Exec(node) => gen_node(node.into(), context),
     ShellOrExecExpr::Shell(node) => gen_node(node.into(), context),
@@ -289,24 +290,24 @@ fn gen_shell_instruction<'a>(node: &'a ShellInstruction, context: &mut Context<'
 
 fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("ONBUILD ");
+  items.push_sc(sc!("ONBUILD "));
   items.extend(gen_node((&*node.instruction).into(), context));
   items
 }
 
 fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("HEALTHCHECK ");
+  items.push_sc(sc!("HEALTHCHECK "));
   for flag in &node.flags {
-    items.push_str("--");
+    items.push_sc(sc!("--"));
     items.extend(gen_node((&flag.name).into(), context));
-    items.push_str("=");
+    items.push_sc(sc!("="));
     items.extend(gen_node((&flag.value).into(), context));
-    items.push_str(" ");
+    items.push_sc(sc!(" "));
   }
   match &node.cmd {
     Some(instruction) => items.extend(gen_node((&**instruction).into(), context)),
-    None => items.push_str("NONE"),
+    None => items.push_sc(sc!("NONE")),
   }
   items
 }
@@ -323,25 +324,25 @@ fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction, context: &mut Conte
 
 fn gen_string_array<'a>(node: &'a StringArray, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_str("[");
+  items.push_sc(sc!("["));
   for (i, element) in node.elements.iter().enumerate() {
     items.extend(gen_node(element.into(), context));
     if i < node.elements.len() - 1 {
-      items.push_str(", ");
+      items.push_sc(sc!(", "));
     }
   }
-  items.push_str("]");
+  items.push_sc(sc!("]"));
   items
 }
 
 /// The line-continuation marker for the file's escape character.
-fn continuation(escape: char) -> &'static str {
-  if escape == '`' { "`" } else { "\\" }
+fn continuation(escape: char) -> &'static StringContainer {
+  if escape == '`' { sc!("`") } else { sc!("\\") }
 }
 
 /// The line-continuation marker preceded by a separating space.
-fn space_continuation(escape: char) -> &'static str {
-  if escape == '`' { " `" } else { " \\" }
+fn space_continuation(escape: char) -> &'static StringContainer {
+  if escape == '`' { sc!(" `") } else { sc!(" \\") }
 }
 
 fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>) -> PrintItems {
@@ -363,13 +364,13 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
   let space_continuation = space_continuation(context.escape());
 
   if use_quotes {
-    items.push_str("\"");
+    items.push_sc(sc!("\""));
   }
   // when the breakable starts with a comment (e.g. `RUN \` followed by a
   // comment line), emit the line continuation so the comment stays attached to
   // the instruction instead of being dropped or turning the rest into a comment
   if matches!(node.components.first(), Some(BreakableStringComponent::Comment(_))) {
-    items.push_str(continuation);
+    items.push_sc(continuation);
     items.push_signal(Signal::NewLine);
   }
   for (i, component) in node.components.iter().enumerate() {
@@ -389,16 +390,16 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
         // part of the (kept) string content, so don't add a separator space
         let ends_in_quote = context.collapse_shell_ws && context.shell_quote.is_some();
         if !use_quotes && !ends_in_quote && text.content.ends_with(" ") {
-          items.push_str(space_continuation);
+          items.push_sc(space_continuation);
         } else {
-          items.push_str(continuation);
+          items.push_sc(continuation);
         }
       }
       items.push_signal(Signal::NewLine);
     }
   }
   if use_quotes {
-    items.push_str("\"");
+    items.push_sc(sc!("\""));
   }
 
   context.gen_string_content = previous_gen_string_content;
@@ -537,9 +538,9 @@ fn collapse_shell_whitespace(text: &str, drop_leading: bool, quote: &mut Option<
 fn gen_copy_flag<'a>(node: &'a CopyFlag, context: &mut Context<'a>) -> PrintItems {
   // ex: --from=foo
   let mut items = PrintItems::new();
-  items.push_str("--");
+  items.push_sc(sc!("--"));
   items.extend(gen_node((&node.name).into(), context));
-  items.push_str("=");
+  items.push_sc(sc!("="));
   items.extend(gen_node((&node.value).into(), context));
   items
 }

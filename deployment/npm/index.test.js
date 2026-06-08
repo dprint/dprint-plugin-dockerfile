@@ -5,6 +5,9 @@ const getPath = require("./index").getPath;
 
 const buffer = require("fs").readFileSync(getPath());
 const formatter = createFromBuffer(buffer);
-const result = formatter.formatText("file.dockerfile", "RUN    /bin/bash");
+const result = formatter.formatText({
+  filePath: "file.dockerfile",
+  fileText: "RUN    /bin/bash",
+});
 
 assert.strictEqual(result, "RUN /bin/bash\n");
