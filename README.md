@@ -4,8 +4,6 @@
 
 Dockerfile code formatter plugin for [dprint](https://dprint.dev).
 
-This uses [dockerfile-parser](https://crates.io/crates/dockerfile-parser) to parse a dockerfile.
-
 ## Install
 
 [Install](https://dprint.dev/install/) and [setup](https://dprint.dev/setup/) dprint.
