@@ -155,3 +155,35 @@ RUN echo foo \
 RUN echo foo \
     # comment
     bar
+
+== should keep a comment immediately after a run line continuation ==
+RUN \
+# Print Hello World!
+echo 'Hello World!'
+
+[expect]
+RUN \
+# Print Hello World!
+echo 'Hello World!'
+
+== should keep an indented comment immediately after a run line continuation ==
+RUN \
+    # note
+    echo hi
+
+[expect]
+RUN \
+    # note
+    echo hi
+
+== should keep multiple leading comments after a run line continuation ==
+RUN \
+    # one
+    # two
+    echo hi
+
+[expect]
+RUN \
+    # one
+    # two
+    echo hi

@@ -1,0 +1,89 @@
+== keeps comments in FROM after continuations ==
+FROM \
+# base comment
+--platform=linux/amd64 \
+# platform comment
+alpine
+
+[expect]
+# base comment
+# platform comment
+FROM --platform=linux/amd64 alpine
+
+== keeps a comment before the FROM alias ==
+FROM alpine \
+# alias comment
+AS build
+
+[expect]
+# alias comment
+FROM alpine AS build
+
+== keeps comments between LABEL pairs ==
+LABEL a=b \
+# label comment
+c=d
+
+[expect]
+LABEL a=b \
+      # label comment
+      c=d
+
+== keeps a leading LABEL comment ==
+LABEL \
+# leading label comment
+a=b
+
+[expect]
+# leading label comment
+LABEL a=b
+
+== keeps a comment in ARG ==
+ARG \
+# arg comment
+VERSION=1
+
+[expect]
+# arg comment
+ARG VERSION=1
+
+== keeps a comment in single-value ENV ==
+ENV NAME \
+# env comment
+value
+
+[expect]
+# env comment
+ENV NAME=value
+
+== keeps a comment in HEALTHCHECK before the command ==
+HEALTHCHECK --interval=30s \
+# healthcheck comment
+CMD curl
+
+[expect]
+# healthcheck comment
+HEALTHCHECK --interval=30s CMD curl
+
+== keeps a comment in ONBUILD ==
+ONBUILD \
+# onbuild comment
+RUN echo hi
+
+[expect]
+# onbuild comment
+ONBUILD RUN echo hi
+
+== does not treat heredoc body lines starting with hash as droppable comments ==
+RUN <<EOF
+#!/bin/sh
+# a real script comment
+echo hi
+EOF
+
+[expect]
+RUN <<EOF
+#!/bin/sh
+# a real script comment
+echo hi
+EOF

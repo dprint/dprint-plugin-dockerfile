@@ -27,3 +27,13 @@ ENV ONE=TWO\=THREE\=world
 # see https://docs.docker.com/engine/reference/builder/#env
 ENV ONE="TWO=    THREE=world"
 ENV ONE=TWO\=THREE\=world
+
+== should support backslash-escaped spaces in values ==
+# see https://docs.docker.com/engine/reference/builder/#env
+ENV MY_DOG=Rex\ The\ Dog
+ENV MY_CAT=fluffy
+
+[expect]
+# see https://docs.docker.com/engine/reference/builder/#env
+ENV MY_DOG="Rex The Dog"
+ENV MY_CAT=fluffy

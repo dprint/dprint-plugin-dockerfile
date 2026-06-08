@@ -21,6 +21,12 @@ pub struct ConfigurationBuilder {
   global_config: Option<GlobalConfiguration>,
 }
 
+impl Default for ConfigurationBuilder {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl ConfigurationBuilder {
   /// Constructs a new configuration builder.
   pub fn new() -> ConfigurationBuilder {
@@ -71,8 +77,8 @@ impl ConfigurationBuilder {
 
 #[cfg(test)]
 mod tests {
-  use dprint_core::configuration::resolve_global_config;
   use dprint_core::configuration::NewLineKind;
+  use dprint_core::configuration::resolve_global_config;
 
   use super::*;
 

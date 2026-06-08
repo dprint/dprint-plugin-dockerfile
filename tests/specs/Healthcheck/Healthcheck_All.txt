@@ -1,0 +1,19 @@
+== should normalize options and the nested command ==
+HEALTHCHECK   --interval=30s    --timeout=3s   CMD   curl -f http://localhost/
+HEALTHCHECK --retries=3 CMD ["curl","-f","http://localhost/"]
+
+[expect]
+HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost/
+HEALTHCHECK --retries=3 CMD ["curl", "-f", "http://localhost/"]
+
+== should support flags with dashes ==
+HEALTHCHECK  --start-period=5s  CMD  test
+
+[expect]
+HEALTHCHECK --start-period=5s CMD test
+
+== should format NONE ==
+HEALTHCHECK    NONE
+
+[expect]
+HEALTHCHECK NONE

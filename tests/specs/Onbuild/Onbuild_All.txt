@@ -1,0 +1,15 @@
+== should normalize the nested instruction ==
+ONBUILD   RUN    echo hello
+ONBUILD  COPY   --chown=user:group   src   dest
+ONBUILD   ADD . /app/src
+
+[expect]
+ONBUILD RUN echo hello
+ONBUILD COPY --chown=user:group src dest
+ONBUILD ADD . /app/src
+
+== should normalize a nested exec form ==
+ONBUILD  CMD   [  "echo"  ,  "hi"  ]
+
+[expect]
+ONBUILD CMD ["echo", "hi"]

@@ -1,5 +1,6 @@
-use dockerfile_parser::*;
 use std::rc::Rc;
+
+use crate::ast::*;
 
 macro_rules! create_node_ref {
   ($($variant_name:ident($node_name:ident),)*) => {
@@ -35,6 +36,10 @@ create_node_ref!(
   Entrypoint(EntrypointInstruction),
   Env(EnvInstruction),
   EnvVar(EnvVar),
+  Shell(ShellInstruction),
+  Onbuild(OnbuildInstruction),
+  Healthcheck(HealthcheckInstruction),
+  Heredoc(HeredocInstruction),
   Misc(MiscInstruction),
   String(SpannedString),
   BreakableString(BreakableString),
@@ -59,6 +64,10 @@ impl<'a> Node<'a> {
       CopyFlag(node) => node.span,
       Env(node) => node.span,
       EnvVar(node) => node.span,
+      Shell(node) => node.span,
+      Onbuild(node) => node.span,
+      Healthcheck(node) => node.span,
+      Heredoc(node) => node.span,
       Misc(node) => node.span,
       String(node) => node.span,
       BreakableString(node) => node.span,
@@ -86,8 +95,9 @@ pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment> {
 
     if in_start_comment_context && matches!(c, '#') {
       let start_index = i;
-      let mut end_index = i;
-      while let Some((i, c)) = char_iterator.next() {
+      // include the `#` itself so an empty comment is treated like any other
+      let mut end_index = i + c.len_utf8();
+      for (i, c) in char_iterator.by_ref() {
         if c == '\n' {
           break;
         }
@@ -118,6 +128,10 @@ impl<'a> From<&'a Instruction> for Node<'a> {
       Cmd(node) => node.into(),
       Copy(node) => node.into(),
       Env(node) => node.into(),
+      Shell(node) => node.into(),
+      Onbuild(node) => node.into(),
+      Healthcheck(node) => node.into(),
+      Heredoc(node) => node.into(),
       Misc(node) => node.into(),
     }
   }

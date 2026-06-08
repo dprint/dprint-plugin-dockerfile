@@ -6,6 +6,16 @@ COPY  arr[[]0].txt    /mydir/
 COPY --chown=user:group --from=test source1 source2 destination/
 COPY arr[[]0].txt /mydir/
 
+== should normalize the exec (JSON array) form ==
+COPY  ["a.txt", "./"]
+COPY ["a.txt","b.txt","./"]
+COPY --chown=user:group   [  "a.txt"  ,  "./"  ]
+
+[expect]
+COPY ["a.txt", "./"]
+COPY ["a.txt", "b.txt", "./"]
+COPY --chown=user:group ["a.txt", "./"]
+
 == should collapse a multi-line copy without comments to a single line ==
 COPY foo \
     bar /dest
