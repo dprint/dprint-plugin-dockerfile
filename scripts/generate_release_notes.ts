@@ -14,7 +14,7 @@ ${changelog}
 
 Then in your project's dprint configuration file:
 
-1. Specify the plugin url in the \`"plugins"\` array or run \`dprint config add dockerfile\`.
+1. Run \`dprint add dockerfile\` or specify the plugin url in the \`"plugins"\` array.
 2. Add a \`"dockerfile"\` configuration property if desired.
    \`\`\`jsonc
    {
