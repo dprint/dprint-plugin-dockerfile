@@ -19,3 +19,29 @@ RUN echo "\
 RUN ["dprint", "fmt"]
 RUN ["c:\\windows\\system32\\tasklist.exe"]
 RUN "  test  "
+
+== should collapse extra spaces in shell commands ==
+RUN rm     -rf /usr/share/nginx/html/*
+RUN echo   hi    there
+
+[expect]
+RUN rm -rf /usr/share/nginx/html/*
+RUN echo hi there
+
+== should not collapse spaces inside quotes or after an escape ==
+RUN echo "a     b"   c
+RUN echo 'a     b'   c
+RUN echo a\ \ b   c
+
+[expect]
+RUN echo "a     b" c
+RUN echo 'a     b' c
+RUN echo a\ \ b c
+
+== should collapse internal spaces but keep continuation indentation ==
+RUN echo foo \
+    bar    baz
+
+[expect]
+RUN echo foo \
+    bar baz

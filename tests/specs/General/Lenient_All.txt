@@ -1,0 +1,33 @@
+== should keep an unparseable line verbatim instead of failing the whole file ==
+FROM alpine
+USER
+RUN echo   hi
+
+[expect]
+FROM alpine
+USER
+RUN echo hi
+
+== should keep a bare instruction keyword ==
+LABEL
+
+[expect]
+LABEL
+
+== should keep a COPY with too few arguments ==
+COPY a
+
+[expect]
+COPY a
+
+== should keep a FROM with trailing junk ==
+FROM x y
+
+[expect]
+FROM x y
+
+== should keep a non-keyword line ==
+123 abc
+
+[expect]
+123 abc

@@ -48,6 +48,9 @@ pub struct Dockerfile {
   pub content: String,
   /// An ordered list of all parsed instructions.
   pub instructions: Vec<Instruction>,
+  /// The line-continuation / escape character, from a `# escape=` directive
+  /// (`\` by default).
+  pub escape: char,
 }
 
 impl Dockerfile {
@@ -73,6 +76,9 @@ pub enum Instruction {
   Healthcheck(HealthcheckInstruction),
   Heredoc(HeredocInstruction),
   Misc(MiscInstruction),
+  /// A line that could not be parsed as a known instruction. It is kept
+  /// verbatim so a single malformed line never fails formatting of the file.
+  Unknown(SpannedString),
 }
 
 impl Instruction {
@@ -91,6 +97,7 @@ impl Instruction {
       Instruction::Healthcheck(i) => i.span,
       Instruction::Heredoc(i) => i.span,
       Instruction::Misc(i) => i.span,
+      Instruction::Unknown(i) => i.span,
     }
   }
 }

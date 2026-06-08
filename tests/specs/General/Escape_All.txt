@@ -1,0 +1,47 @@
+== should honor a backtick escape directive for line continuations ==
+# escape=`
+RUN powershell -Command `
+    Write-Host hi
+
+[expect]
+# escape=`
+RUN powershell -Command `
+    Write-Host hi
+
+== should keep a literal trailing backslash under a backtick escape directive ==
+# escape=`
+RUN dir c:\
+
+[expect]
+# escape=`
+RUN dir c:\
+
+== should honor an escape directive after a syntax directive ==
+# syntax=docker/dockerfile:1
+# escape=`
+RUN a `
+    b
+
+[expect]
+# syntax=docker/dockerfile:1
+# escape=`
+RUN a `
+    b
+
+== should drop a dangling trailing backslash in run ==
+RUN echo a\
+
+[expect]
+RUN echo a
+
+== should not fail on a dangling trailing backslash in arg ==
+ARG A=c:\
+
+[expect]
+ARG A=c:
+
+== should not fail on a dangling trailing backslash in copy ==
+COPY a b\
+
+[expect]
+COPY a b

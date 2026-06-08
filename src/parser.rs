@@ -13,12 +13,35 @@ type PResult<'a, T> = Result<(&'a str, T), ParseErrorFailureError>;
 
 /// Parses a Dockerfile from a string.
 pub fn parse(text: &str) -> Result<Dockerfile, ParseErrorFailureError> {
-  let parser = Parser { base: text };
+  let escape = detect_escape(text);
+  let parser = Parser { base: text, escape };
   let instructions = parser.parse_dockerfile(text)?;
   Ok(Dockerfile {
     content: text.to_string(),
     instructions,
+    escape,
   })
+}
+
+/// Determines the escape character from a leading `# escape=` parser directive,
+/// defaulting to `\`. Parser directives are `# name=value` comment lines at the
+/// very top of the file; scanning stops at the first line that isn't one.
+fn detect_escape(text: &str) -> char {
+  for line in text.lines() {
+    let trimmed = line.trim();
+    let Some(directive) = trimmed.strip_prefix('#') else {
+      break; // a blank line or instruction ends the directive section
+    };
+    let Some((name, value)) = directive.split_once('=') else {
+      break; // a regular comment ends the directive section
+    };
+    match name.trim().to_ascii_lowercase().as_str() {
+      "escape" => return if value.trim() == "`" { '`' } else { '\\' },
+      "syntax" => continue, // another directive — keep looking
+      _ => break,           // unknown directive is treated as a comment
+    }
+  }
+  '\\'
 }
 
 /// The set of instruction keywords that have dedicated parsing. Everything else
@@ -39,6 +62,9 @@ const KEYWORDS: [&str; 11] = [
 
 struct Parser<'a> {
   base: &'a str,
+  /// the line-continuation / escape character (`\` by default, `` ` `` under a
+  /// `# escape=` directive)
+  escape: char,
 }
 
 impl<'a> Parser<'a> {
@@ -62,10 +88,26 @@ impl<'a> Parser<'a> {
         continue;
       }
 
-      let (rest, instruction) = self.parse_instruction(after_ws)?;
-      let (rest, instruction) = self.maybe_consume_heredocs(instruction, rest);
-      instructions.push(instruction);
-      input = self.finish_line(rest)?;
+      // try to parse a structured instruction; if the line can't be parsed
+      // (a bare keyword, too few arguments, trailing junk, ...), keep it
+      // verbatim so one malformed line doesn't fail the whole file
+      let parsed = (|| {
+        let (rest, instruction) = self.parse_instruction(after_ws)?;
+        let (rest, instruction) = self.maybe_consume_heredocs(instruction, rest);
+        let next = self.finish_line(rest)?;
+        Ok::<_, ParseErrorFailureError>((next, instruction))
+      })();
+      match parsed {
+        Ok((next, instruction)) => {
+          instructions.push(instruction);
+          input = next;
+        }
+        Err(_) => {
+          let (rest, line) = self.unknown_line(after_ws);
+          instructions.push(Instruction::Unknown(line));
+          input = rest;
+        }
+      }
     }
     Ok(instructions)
   }
@@ -216,17 +258,18 @@ impl<'a> Parser<'a> {
     // the exec (JSON array) form: `COPY ["src", "dest"]`
     if let Some(after_ws) = self.arg_ws(input)
       && after_ws.starts_with('[')
-        && let Ok((rest, array)) = self.string_array(after_ws) {
-          let span = Span::new(start, array.span.end);
-          return Ok((
-            rest,
-            Instruction::Copy(CopyInstruction {
-              span,
-              flags,
-              args: CopyArgs::Exec(array),
-            }),
-          ));
-        }
+      && let Ok((rest, array)) = self.string_array(after_ws)
+    {
+      let span = Span::new(start, array.span.end);
+      return Ok((
+        rest,
+        Instruction::Copy(CopyInstruction {
+          span,
+          flags,
+          args: CopyArgs::Exec(array),
+        }),
+      ));
+    }
 
     // (arg_ws ~ copy_pathspec){2,}
     while let Some(after_ws) = self.arg_ws(input) {
@@ -393,8 +436,8 @@ impl<'a> Parser<'a> {
     let mut end = input.len();
     let mut chars = input.char_indices();
     while let Some((i, c)) = chars.next() {
-      if c == '\\' {
-        if line_continuation(&input[i..]).is_some() {
+      if c == self.escape {
+        if line_continuation(&input[i..], self.escape).is_some() {
           end = i;
           break;
         }
@@ -415,7 +458,7 @@ impl<'a> Parser<'a> {
       rest,
       SpannedString {
         span: self.span(input, rest),
-        content: unescape(raw),
+        content: unescape(raw, self.escape),
       },
     ))
   }
@@ -455,10 +498,11 @@ impl<'a> Parser<'a> {
 
     // the `NONE` form has no nested instruction
     if let Some(after) = strip_prefix_ci(input, "none")
-      && (after.is_empty() || after.starts_with(is_ws) || starts_with_newline(after)) {
-        let span = Span::new(start, self.off(after));
-        return Ok((after, Instruction::Healthcheck(HealthcheckInstruction { span, flags, cmd: None })));
-      }
+      && (after.is_empty() || after.starts_with(is_ws) || starts_with_newline(after))
+    {
+      let span = Span::new(start, self.off(after));
+      return Ok((after, Instruction::Healthcheck(HealthcheckInstruction { span, flags, cmd: None })));
+    }
 
     // otherwise a nested instruction follows (normally `CMD ...`)
     let (rest, inner) = self.parse_instruction(input)?;
@@ -610,7 +654,7 @@ impl<'a> Parser<'a> {
         continue;
       }
 
-      let (after_content, content) = take_any_content(s);
+      let (after_content, content) = take_any_content(s, self.escape);
       if content.is_empty() {
         break;
       }
@@ -620,7 +664,7 @@ impl<'a> Parser<'a> {
         content: content.to_string(),
       }));
       s = after_content;
-      match line_continuation(s) {
+      match line_continuation(s, self.escape) {
         Some(rest) => {
           s = rest;
           if s.is_empty() {
@@ -662,14 +706,13 @@ impl<'a> Parser<'a> {
         s = after_ws;
         continue;
       }
-      let Some(after_cont) = line_continuation(s) else { break };
+      let Some(after_cont) = line_continuation(s, self.escape) else { break };
       s = after_cont;
       loop {
-        if consume_comments
-          && let Some(rest) = comment_line(s) {
-            s = rest;
-            continue;
-          }
+        if consume_comments && let Some(rest) = comment_line(s) {
+          s = rest;
+          continue;
+        }
         if let Some(rest) = empty_line(s) {
           s = rest;
         } else {
@@ -689,7 +732,7 @@ impl<'a> Parser<'a> {
   fn any_whitespace(&self, input: &'a str) -> PResult<'a, &'a str> {
     let mut end = input.len();
     for (i, c) in input.char_indices() {
-      if is_ws(c) || is_newline_char(c) || (c == '\\' && line_continuation(&input[i..]).is_some()) {
+      if is_ws(c) || is_newline_char(c) || (c == self.escape && line_continuation(&input[i..], self.escape).is_some()) {
         end = i;
         break;
       }
@@ -723,7 +766,32 @@ impl<'a> Parser<'a> {
       // tolerate it here too so the formatter can re-discover it in the gap
       return Ok(skip_to_next_line(rest));
     }
+    if let Some(rest) = line_continuation(rest, self.escape) {
+      // a dangling line continuation (e.g. a trailing `\`) — Docker treats it as
+      // a continuation to nothing, so just drop it
+      return Ok(rest);
+    }
     Err(ParseErrorFailureError::new(format!("unexpected character at: {}", snippet(rest))))
+  }
+
+  /// Captures the current physical line verbatim (trailing whitespace trimmed)
+  /// as a fallback for a line that couldn't be parsed, returning the input
+  /// positioned after the line's newline.
+  fn unknown_line(&self, input: &'a str) -> (&'a str, SpannedString) {
+    let line_end = match input.find(['\n', '\r']) {
+      Some(i) => &input[i..],
+      None => &input[input.len()..],
+    };
+    let content = input[..input.len() - line_end.len()].trim_end();
+    let span = Span::new(self.off(input), self.off(input) + content.len());
+    let rest = strip_newline(line_end).unwrap_or(line_end);
+    (
+      rest,
+      SpannedString {
+        span,
+        content: content.to_string(),
+      },
+    )
   }
 
   /// If the just-parsed instruction's first line declares heredocs, consume
@@ -964,18 +1032,30 @@ fn skip_to_next_line(s: &str) -> &str {
 }
 
 /// Strips a case-insensitive keyword prefix, returning the remaining input.
+/// `keyword` is ASCII, so `s.get` keeps this panic-free even when `s` begins
+/// with a multibyte character that straddles `keyword.len()`.
 fn strip_prefix_ci<'a>(s: &'a str, keyword: &str) -> Option<&'a str> {
-  if s.len() < keyword.len() || !s[..keyword.len()].eq_ignore_ascii_case(keyword) {
-    return None;
+  let prefix = s.get(..keyword.len())?;
+  if prefix.eq_ignore_ascii_case(keyword) {
+    Some(&s[keyword.len()..])
+  } else {
+    None
   }
-  Some(&s[keyword.len()..])
 }
 
-/// A line continuation: `\` followed by insignificant whitespace and a newline.
-fn line_continuation(s: &str) -> Option<&str> {
-  let rest = s.strip_prefix('\\')?;
+/// A line continuation: the escape character followed by insignificant
+/// whitespace and a newline (or end of input — a dangling continuation). The
+/// escape character is `\` by default, or `` ` `` under a `# escape=` directive.
+fn line_continuation(s: &str, escape: char) -> Option<&str> {
+  let rest = s.strip_prefix(escape)?;
   let rest = skip_ws(rest);
-  strip_newline(rest)
+  match strip_newline(rest) {
+    Some(rest) => Some(rest),
+    // a continuation at end of input dangles; treat it as one so the trailing
+    // escape character isn't kept (which would not round-trip)
+    None if rest.is_empty() => Some(rest),
+    None => None,
+  }
 }
 
 /// `comment_line` = `ws* ~ comment ~ NEWLINE?`. Returns the remaining input.
@@ -993,26 +1073,26 @@ fn empty_line(s: &str) -> Option<&str> {
 }
 
 /// `any_content`: consumes characters until a newline or line continuation.
-fn take_any_content(s: &str) -> (&str, &str) {
+fn take_any_content(s: &str, escape: char) -> (&str, &str) {
   for (i, c) in s.char_indices() {
-    if is_newline_char(c) || (c == '\\' && line_continuation(&s[i..]).is_some()) {
+    if is_newline_char(c) || (c == escape && line_continuation(&s[i..], escape).is_some()) {
       return (&s[i..], &s[..i]);
     }
   }
   ("", s)
 }
 
-/// Resolves backslash escapes in an unquoted value (e.g. `Rex\ The\ Dog` ->
-/// `Rex The Dog`): a backslash drops out and the following character is kept
+/// Resolves escapes in an unquoted value (e.g. `Rex\ The\ Dog` -> `Rex The
+/// Dog`): the escape character drops out and the following character is kept
 /// verbatim.
-fn unescape(s: &str) -> String {
+fn unescape(s: &str, escape: char) -> String {
   let mut result = String::with_capacity(s.len());
   let mut chars = s.chars();
   while let Some(c) = chars.next() {
-    if c == '\\' {
+    if c == escape {
       match chars.next() {
         Some(next) => result.push(next),
-        None => result.push('\\'),
+        None => result.push(escape),
       }
     } else {
       result.push(c);
