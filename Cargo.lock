@@ -140,7 +140,7 @@ dependencies = [
 
 [[package]]
 name = "dprint-plugin-dockerfile"
-version = "0.3.4"
+version = "0.4.0"
 dependencies = [
  "dprint-core",
  "dprint-core-macros",
