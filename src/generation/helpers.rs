@@ -48,7 +48,6 @@ create_node_ref!(
 );
 
 impl<'a> Node<'a> {
-  #[allow(dead_code)]
   pub fn span(&self) -> Span {
     use Node::*;
     match self {
@@ -133,6 +132,8 @@ impl<'a> From<&'a Instruction> for Node<'a> {
       Healthcheck(node) => node.into(),
       Heredoc(node) => node.into(),
       Misc(node) => node.into(),
+      // a verbatim unparsed line is emitted as its raw string
+      Unknown(node) => node.into(),
     }
   }
 }

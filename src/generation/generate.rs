@@ -206,6 +206,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
     .collect::<Vec<_>>();
   let force_use_new_lines = nodes_with_line_index.len() > 1
     && (nodes_with_line_index[0].1 < nodes_with_line_index[1].1 || nodes_with_line_index.iter().any(|(node, _)| node.is_comment()));
+  let space_continuation = space_continuation(context.escape());
 
   ir_helpers::gen_separated_values(
     |is_multiline| {
@@ -218,7 +219,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
           if i < count - 1 && !is_comment {
             node_items.push_condition(conditions::if_true("endLineText", is_multiline.create_resolver(), {
               let mut items = PrintItems::new();
-              items.push_str(" \\");
+              items.push_str(space_continuation);
               items
             }));
           }
@@ -333,6 +334,16 @@ fn gen_string_array<'a>(node: &'a StringArray, context: &mut Context<'a>) -> Pri
   items
 }
 
+/// The line-continuation marker for the file's escape character.
+fn continuation(escape: char) -> &'static str {
+  if escape == '`' { "`" } else { "\\" }
+}
+
+/// The line-continuation marker preceded by a separating space.
+fn space_continuation(escape: char) -> &'static str {
+  if escape == '`' { " `" } else { " \\" }
+}
+
 fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   let is_parent_env_var = matches!(context.parent(), Some(Node::EnvVar(_)));
@@ -341,6 +352,16 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
   let previous_gen_string_content = context.gen_string_content;
   context.gen_string_content = use_quotes;
 
+  // collapse runs of insignificant whitespace in shell commands (#8), but not
+  // in the quoted env-var form (which preserves its content verbatim)
+  let is_shell_command = matches!(context.parent(), Some(Node::Run(_) | Node::Cmd(_) | Node::Entrypoint(_)));
+  let previous_collapse = context.collapse_shell_ws;
+  let previous_quote = context.shell_quote;
+  context.collapse_shell_ws = is_shell_command && !use_quotes;
+  context.shell_quote = None;
+  let continuation = continuation(context.escape());
+  let space_continuation = space_continuation(context.escape());
+
   if use_quotes {
     items.push_str("\"");
   }
@@ -348,7 +369,7 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
   // comment line), emit the line continuation so the comment stays attached to
   // the instruction instead of being dropped or turning the rest into a comment
   if matches!(node.components.first(), Some(BreakableStringComponent::Comment(_))) {
-    items.push_str("\\");
+    items.push_str(continuation);
     items.push_signal(Signal::NewLine);
   }
   for (i, component) in node.components.iter().enumerate() {
@@ -357,16 +378,20 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
     if matches!(component, BreakableStringComponent::Comment(_)) {
       let indentation = comment_indentation(&node.components, i);
       if !indentation.is_empty() {
-        items.extend(indentation.to_string().into());
+        // via gen_from_raw_string so a tab indent becomes a Tab signal
+        items.extend(gen_from_raw_string(indentation));
       }
     }
     items.extend(gen_node(component.into(), context));
     if i < node.components.len() - 1 {
       if let BreakableStringComponent::String(text) = component {
-        if !use_quotes && text.content.ends_with(" ") {
-          items.push_str(" \\");
+        // when the component ends inside a quote, any trailing whitespace is
+        // part of the (kept) string content, so don't add a separator space
+        let ends_in_quote = context.collapse_shell_ws && context.shell_quote.is_some();
+        if !use_quotes && !ends_in_quote && text.content.ends_with(" ") {
+          items.push_str(space_continuation);
         } else {
-          items.push_str("\\");
+          items.push_str(continuation);
         }
       }
       items.push_signal(Signal::NewLine);
@@ -377,6 +402,8 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
   }
 
   context.gen_string_content = previous_gen_string_content;
+  context.collapse_shell_ws = previous_collapse;
+  context.shell_quote = previous_quote;
   items
 }
 
@@ -399,24 +426,112 @@ fn string_leading_whitespace(component: &BreakableStringComponent) -> Option<&st
 
 fn gen_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  let text = if context.gen_string_content {
+  if context.gen_string_content {
     // don't trim this because it's the content
-    &node.content
+    items.extend(gen_from_raw_string(&node.content));
+    return items;
+  }
+
+  // only the leading content string (right after the instruction prefix) has
+  // its indentation trimmed; later lines keep their leading whitespace. when
+  // the breakable starts with a comment there is no leading content string, so
+  // every string preserves its indentation
+  let should_trim = if let Some(Node::BreakableString(parent)) = context.parent() {
+    matches!(parent.components.first(), Some(BreakableStringComponent::String(str)) if str.span == node.span)
   } else {
-    // only the leading content string (right after the instruction prefix) has
-    // its indentation trimmed; later lines keep their leading whitespace. when
-    // the breakable starts with a comment there is no leading content string, so
-    // every string preserves its indentation
-    let should_trim = if let Some(Node::BreakableString(parent)) = context.parent() {
-      matches!(parent.components.first(), Some(BreakableStringComponent::String(str)) if str.span == node.span)
-    } else {
-      true
-    };
-    let text = context.span_text(&node.span);
-    if should_trim { text.trim() } else { text.trim_end() }
+    true
   };
-  items.extend(gen_from_raw_string(text));
+  let raw = context.span_text(&node.span);
+
+  if context.collapse_shell_ws {
+    // run the quote-aware collapse on the raw text so significant whitespace
+    // inside a quote is never stripped by a blind trim
+    let collapsed = collapse_shell_whitespace(raw, should_trim, &mut context.shell_quote);
+    // trailing whitespace outside a quote is just a separator (represented by
+    // the line-continuation marker), so drop it; inside a quote it is part of
+    // the string and must be kept
+    let text = if context.shell_quote.is_none() {
+      collapsed.trim_end()
+    } else {
+      collapsed.as_str()
+    };
+    items.extend(gen_from_raw_string(text));
+  } else {
+    let text = if should_trim { raw.trim() } else { raw.trim_end() };
+    items.extend(gen_from_raw_string(text));
+  }
   items
+}
+
+/// Collapses runs of two or more insignificant whitespace characters into a
+/// single space within shell command text, leaving whitespace inside quotes and
+/// after a backslash escape untouched. `quote` tracks the open quote across the
+/// breakable string's components. Leading whitespace is kept as indentation
+/// unless `drop_leading` is set (the leading content line, whose indentation is
+/// trimmed away).
+fn collapse_shell_whitespace(text: &str, drop_leading: bool, quote: &mut Option<char>) -> String {
+  let mut out = String::with_capacity(text.len());
+  let mut chars = text.chars().peekable();
+
+  // leading whitespace outside a quote is indentation: keep it, or drop it for
+  // the leading content line
+  if quote.is_none() {
+    while matches!(chars.peek(), Some(' ' | '\t')) {
+      let c = chars.next().unwrap();
+      if !drop_leading {
+        out.push(c);
+      }
+    }
+  }
+
+  while let Some(c) = chars.next() {
+    match *quote {
+      Some('\'') => {
+        out.push(c);
+        if c == '\'' {
+          *quote = None;
+        }
+      }
+      Some(_) => {
+        // inside a double quote: a backslash escapes the next character
+        out.push(c);
+        if c == '\\' {
+          if let Some(next) = chars.next() {
+            out.push(next);
+          }
+        } else if c == '"' {
+          *quote = None;
+        }
+      }
+      None => match c {
+        '\'' | '"' => {
+          out.push(c);
+          *quote = Some(c);
+        }
+        // an escaped character (including `\ `) is kept verbatim
+        '\\' => {
+          out.push(c);
+          if let Some(next) = chars.next() {
+            out.push(next);
+          }
+        }
+        ' ' | '\t' => {
+          let mut count = 1;
+          while matches!(chars.peek(), Some(' ' | '\t')) {
+            chars.next();
+            count += 1;
+          }
+          if count > 1 {
+            out.push(' ');
+          } else {
+            out.push(c);
+          }
+        }
+        _ => out.push(c),
+      },
+    }
+  }
+  out
 }
 
 fn gen_copy_flag<'a>(node: &'a CopyFlag, context: &mut Context<'a>) -> PrintItems {
@@ -470,9 +585,12 @@ fn gen_comment_text(text: &str) -> PrintItems {
   let text_start = text.find(|c| c != '#').unwrap_or(text.len());
   let comment_chars = &text[1..text_start];
   let end_text = &text[text_start..].trim();
-  if end_text.is_empty() {
-    format!("#{}", comment_chars).into()
+  let comment = if end_text.is_empty() {
+    format!("#{}", comment_chars)
   } else {
-    format!("#{} {}", comment_chars, end_text).into()
-  }
+    format!("#{} {}", comment_chars, end_text)
+  };
+  // via gen_from_raw_string so an interior tab becomes a Tab signal rather than
+  // a raw tab (which the printer rejects)
+  gen_from_raw_string(&comment)
 }

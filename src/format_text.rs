@@ -63,4 +63,16 @@ mod test {
       assert_eq!(text, "FROM example:12.16.1\n");
     }
   }
+
+  #[test]
+  fn comment_with_interior_tab_does_not_panic() {
+    // a tab inside a comment must be emitted as a tab signal, not a raw tab
+    // that the printer rejects
+    let result = format_text(
+      &std::path::PathBuf::from("Dockerfile"),
+      "# a\tb\nFROM x\n",
+      &crate::configuration::ConfigurationBuilder::new().build(),
+    );
+    assert!(result.is_ok());
+  }
 }

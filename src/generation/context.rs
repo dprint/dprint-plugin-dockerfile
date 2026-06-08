@@ -16,6 +16,12 @@ pub struct Context<'a> {
   current_node: Option<Node<'a>>,
   parent_stack: Vec<Node<'a>>,
   pub gen_string_content: bool,
+  /// whether the current breakable string is shell content whose insignificant
+  /// whitespace runs should be collapsed
+  pub collapse_shell_ws: bool,
+  /// the quote currently open while collapsing shell whitespace (carried across
+  /// the breakable string's components), or `None` when outside a quote
+  pub shell_quote: Option<char>,
 }
 
 impl<'a> Context<'a> {
@@ -28,11 +34,18 @@ impl<'a> Context<'a> {
       current_node: None,
       parent_stack: Vec::new(),
       gen_string_content: false,
+      collapse_shell_ws: false,
+      shell_quote: None,
     }
   }
 
-  pub fn span_text(&self, span: &Span) -> &str {
+  pub fn span_text(&self, span: &Span) -> &'a str {
     &self.text[span.start..span.end]
+  }
+
+  /// The line-continuation / escape character for this file (`\` or `` ` ``).
+  pub fn escape(&self) -> char {
+    self.dockerfile.escape
   }
 
   pub fn set_current_node(&mut self, node: Node<'a>) {
