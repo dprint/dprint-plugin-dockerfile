@@ -1,0 +1,13 @@
+== should normalize the exec array ==
+SHELL    [   "powershell"   ,    "-command"   ]
+SHELL ["cmd","/S","/C"]
+
+[expect]
+SHELL ["powershell", "-command"]
+SHELL ["cmd", "/S", "/C"]
+
+== should keep a single element ==
+SHELL  [ "/bin/sh" ]
+
+[expect]
+SHELL ["/bin/sh"]

@@ -9,8 +9,8 @@ use dprint_core::plugins::SyncPluginHandler;
 use dprint_core::plugins::SyncPluginInfo;
 use std::path::Path;
 
-use super::configuration::resolve_config;
 use super::configuration::Configuration;
+use super::configuration::resolve_config;
 
 struct DockerfilePluginHandler;
 
@@ -49,7 +49,8 @@ impl SyncPluginHandler<Configuration> for DockerfilePluginHandler {
     _format_with_host: impl FnMut(&Path, Vec<u8>, &ConfigKeyMap) -> FormatResult,
   ) -> FormatResult {
     let file_text = String::from_utf8(file_bytes)?;
-    super::format_text(file_path, &file_text, config).map(|maybe_file_text| maybe_file_text.map(|file_text| file_text.into_bytes()))
+    let result = super::format_text(file_path, &file_text, config)?;
+    Ok(result.map(|file_text| file_text.into_bytes()))
   }
 }
 

@@ -1,19 +1,24 @@
-use dockerfile_parser::*;
-use dprint_core::formatting::ir_helpers::gen_from_raw_string;
 use dprint_core::formatting::ir_helpers::SingleLineOptions;
+use dprint_core::formatting::ir_helpers::gen_from_raw_string;
 use dprint_core::formatting::*;
 
 use super::context::Context;
 use super::helpers::*;
+use crate::ast::*;
 use crate::configuration::Configuration;
 
 pub fn generate(file: &Dockerfile, text: &str, config: &Configuration) -> PrintItems {
   let mut context = Context::new(text, file, config);
   let mut items = PrintItems::new();
-  let top_level_nodes = context.gen_nodes_with_comments(0, text.len(), file.instructions.iter().map(|i| i.into()));
+  let top_level_nodes = context.gen_nodes_with_comments(0, text.len(), true, file.instructions.iter().map(|i| i.into()));
 
   for (i, node) in top_level_nodes.iter().enumerate() {
-    items.extend(gen_node(node.clone(), &mut context));
+    let node_items = gen_node(node.clone(), &mut context);
+    // safety net: never drop a comment. some instructions discard comments that
+    // follow a line continuation (the parser's arg_ws consumes them); recover
+    // any that weren't emitted and place them just before the instruction.
+    items.extend(recover_dropped_comments(node, &mut context));
+    items.extend(node_items);
     items.push_signal(Signal::NewLine);
     if let Some(next_node) = top_level_nodes.get(i + 1) {
       let text_between = &text[node.span().end..next_node.span().start];
@@ -22,13 +27,6 @@ pub fn generate(file: &Dockerfile, text: &str, config: &Configuration) -> PrintI
       }
     }
   }
-
-  /*
-  items.push_condition(if_true(
-    "endOfFileNewLine",
-    |context| Some(context.writer_info.column_number > 0),
-    Signal::NewLine.into(),
-  ));*/
 
   items
 }
@@ -49,6 +47,10 @@ fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
     Node::Label(node) => gen_label_instruction(node, context),
     Node::LabelLabel(node) => gen_label(node, context),
     Node::Misc(node) => gen_misc_instruction(node, context),
+    Node::Shell(node) => gen_shell_instruction(node, context),
+    Node::Onbuild(node) => gen_onbuild_instruction(node, context),
+    Node::Healthcheck(node) => gen_healthcheck_instruction(node, context),
+    Node::Heredoc(node) => gen_heredoc_instruction(node, context),
     Node::Run(node) => gen_run_instruction(node, context),
     Node::StringArray(node) => gen_string_array(node, context),
     Node::String(node) => gen_string(node, context),
@@ -90,24 +92,35 @@ fn gen_copy_instruction<'a>(node: &'a CopyInstruction, context: &mut Context<'a>
   let prefix_str = "COPY ";
   items.push_str(prefix_str);
 
-  let value_nodes = node
-    .flags
-    .iter()
-    .map(|flag| flag.into())
-    .chain(node.sources.iter().map(|source| source.into()))
-    .chain(std::iter::once((&node.destination).into()));
-  let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, value_nodes);
-
-  if nodes.iter().any(|node| node.is_comment()) {
-    // preserve comments by breaking onto multiple lines, aligned with the arguments
-    items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
-  } else {
-    // keep everything on a single line
-    for (i, node) in nodes.into_iter().enumerate() {
-      if i > 0 {
+  match &node.args {
+    CopyArgs::Exec(array) => {
+      for flag in &node.flags {
+        items.extend(gen_node(flag.into(), context));
         items.push_str(" ");
       }
-      items.extend(gen_node(node, context));
+      items.extend(gen_node(array.into(), context));
+    }
+    CopyArgs::Paths { sources, destination } => {
+      let value_nodes = node
+        .flags
+        .iter()
+        .map(|flag| flag.into())
+        .chain(sources.iter().map(|source| source.into()))
+        .chain(std::iter::once(destination.into()));
+      let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, false, value_nodes);
+
+      if nodes.iter().any(|node| node.is_comment()) {
+        // preserve comments by breaking onto multiple lines, aligned with the arguments
+        items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
+      } else {
+        // keep everything on a single line
+        for (i, node) in nodes.into_iter().enumerate() {
+          if i > 0 {
+            items.push_str(" ");
+          }
+          items.extend(gen_node(node, context));
+        }
+      }
     }
   }
   items
@@ -125,7 +138,7 @@ fn gen_entrypoint_instruction<'a>(node: &'a EntrypointInstruction, context: &mut
 
 fn gen_env_instruction<'a>(node: &'a EnvInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, node.vars.iter().map(|i| i.into()));
+  let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, false, node.vars.iter().map(|i| i.into()));
   let prefix_str = "ENV ";
   items.push_str(prefix_str);
   items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
@@ -168,11 +181,9 @@ fn gen_label_instruction<'a>(node: &'a LabelInstruction, context: &mut Context<'
   let mut items = PrintItems::new();
   let prefix_str = "LABEL ";
   items.push_str(prefix_str);
-  items.extend(gen_multi_line_items(
-    node.labels.iter().map(|l| l.into()).collect(),
-    prefix_str.chars().count() as u32,
-    context,
-  ));
+  // route through gen_nodes_with_comments so comments between labels are kept
+  let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, false, node.labels.iter().map(|l| l.into()));
+  items.extend(gen_multi_line_items(nodes, prefix_str.chars().count() as u32, context));
   items
 }
 
@@ -237,7 +248,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
         space_at_end: false,
         separator: Signal::SpaceOrNewLine.into(),
       },
-      indent_width: 0 as u8,
+      indent_width: 0_u8,
       multi_line_options: ir_helpers::MultiLineOptions::same_line_no_indent(),
       force_possible_newline_at_start: false,
     },
@@ -265,6 +276,50 @@ fn gen_run_instruction<'a>(node: &'a RunInstruction, context: &mut Context<'a>) 
   items
 }
 
+fn gen_shell_instruction<'a>(node: &'a ShellInstruction, context: &mut Context<'a>) -> PrintItems {
+  let mut items = PrintItems::new();
+  items.push_str("SHELL ");
+  items.extend(match &node.expr {
+    ShellOrExecExpr::Exec(node) => gen_node(node.into(), context),
+    ShellOrExecExpr::Shell(node) => gen_node(node.into(), context),
+  });
+  items
+}
+
+fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction, context: &mut Context<'a>) -> PrintItems {
+  let mut items = PrintItems::new();
+  items.push_str("ONBUILD ");
+  items.extend(gen_node((&*node.instruction).into(), context));
+  items
+}
+
+fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction, context: &mut Context<'a>) -> PrintItems {
+  let mut items = PrintItems::new();
+  items.push_str("HEALTHCHECK ");
+  for flag in &node.flags {
+    items.push_str("--");
+    items.extend(gen_node((&flag.name).into(), context));
+    items.push_str("=");
+    items.extend(gen_node((&flag.value).into(), context));
+    items.push_str(" ");
+  }
+  match &node.cmd {
+    Some(instruction) => items.extend(gen_node((&**instruction).into(), context)),
+    None => items.push_str("NONE"),
+  }
+  items
+}
+
+fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction, context: &mut Context<'a>) -> PrintItems {
+  let mut items = PrintItems::new();
+  // the first line is a normal instruction and is formatted as such
+  items.extend(gen_node((&*node.instruction).into(), context));
+  // the heredoc body and its closing delimiter(s) are preserved verbatim
+  items.push_signal(Signal::NewLine);
+  items.extend(gen_from_raw_string(&node.body));
+  items
+}
+
 fn gen_string_array<'a>(node: &'a StringArray, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_str("[");
@@ -288,6 +343,13 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
 
   if use_quotes {
     items.push_str("\"");
+  }
+  // when the breakable starts with a comment (e.g. `RUN \` followed by a
+  // comment line), emit the line continuation so the comment stays attached to
+  // the instruction instead of being dropped or turning the rest into a comment
+  if matches!(node.components.first(), Some(BreakableStringComponent::Comment(_))) {
+    items.push_str("\\");
+    items.push_signal(Signal::NewLine);
   }
   for (i, component) in node.components.iter().enumerate() {
     // comments lose their leading whitespace when parsed, so align them
@@ -325,11 +387,7 @@ fn comment_indentation(components: &[BreakableStringComponent], index: usize) ->
   if let Some(whitespace) = following {
     return whitespace;
   }
-  components[..index]
-    .iter()
-    .rev()
-    .find_map(string_leading_whitespace)
-    .unwrap_or("")
+  components[..index].iter().rev().find_map(string_leading_whitespace).unwrap_or("")
 }
 
 fn string_leading_whitespace(component: &BreakableStringComponent) -> Option<&str> {
@@ -345,21 +403,17 @@ fn gen_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintIt
     // don't trim this because it's the content
     &node.content
   } else {
+    // only the leading content string (right after the instruction prefix) has
+    // its indentation trimmed; later lines keep their leading whitespace. when
+    // the breakable starts with a comment there is no leading content string, so
+    // every string preserves its indentation
     let should_trim = if let Some(Node::BreakableString(parent)) = context.parent() {
-      if let Some(BreakableStringComponent::String(str)) = parent.components.first() {
-        str.span == node.span
-      } else {
-        true
-      }
+      matches!(parent.components.first(), Some(BreakableStringComponent::String(str)) if str.span == node.span)
     } else {
       true
     };
     let text = context.span_text(&node.span);
-    if should_trim {
-      text.trim()
-    } else {
-      text.trim_end()
-    }
+    if should_trim { text.trim() } else { text.trim_end() }
   };
   items.extend(gen_from_raw_string(text));
   items
@@ -387,19 +441,33 @@ fn gen_comment<'a>(comment: &SpannedComment, context: &mut Context<'a>) -> Print
   items
 }
 
-fn gen_comment_text(text: &str) -> PrintItems {
-  // For some reason the parser returns an empty text for empty comments,
-  // but for other comments it returns with a leading # char
-  if text.trim().is_empty() {
-    return "#".into();
+/// Recovers any comment inside an instruction's span that its generator didn't
+/// already emit, so comments following a line continuation are never dropped.
+/// Heredoc bodies are excluded — they are verbatim and may contain `#` lines.
+fn recover_dropped_comments<'a>(node: &Node<'a>, context: &mut Context<'a>) -> PrintItems {
+  let mut items = PrintItems::new();
+  if node.is_comment() {
+    return items;
   }
+  let span = match node {
+    Node::Heredoc(heredoc) => heredoc.instruction.span(),
+    _ => node.span(),
+  };
+  let comments = {
+    let interior = &context.text[span.start..span.end];
+    parse_comments(interior, span.start)
+  };
+  for comment in comments {
+    if !context.handled_comments.contains(&comment.span.start) {
+      items.extend(gen_comment(&comment, context));
+    }
+  }
+  items
+}
 
-  let text_start = text
-    .char_indices()
-    .skip_while(|(_, c)| *c == '#')
-    .next()
-    .map(|(index, _)| index)
-    .unwrap_or(text.len());
+fn gen_comment_text(text: &str) -> PrintItems {
+  // comments always retain their leading `#`(s); split them from the body text
+  let text_start = text.find(|c| c != '#').unwrap_or(text.len());
   let comment_chars = &text[1..text_start];
   let end_text = &text[text_start..].trim();
   if end_text.is_empty() {

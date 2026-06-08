@@ -1,22 +1,18 @@
-use anyhow::Result;
-use dockerfile_parser::Dockerfile;
 use dprint_core::configuration::resolve_new_line_kind;
 use dprint_core::formatting::PrintOptions;
 use std::path::Path;
 
+use crate::ast::Dockerfile;
 use crate::configuration::Configuration;
+use crate::error::FormatError;
 use crate::generation::generate;
 
-pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> Result<Option<String>> {
+pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> Result<Option<String>, FormatError> {
   let result = format_inner(text, config)?;
-  if result == text {
-    Ok(None)
-  } else {
-    Ok(Some(result))
-  }
+  if result == text { Ok(None) } else { Ok(Some(result)) }
 }
 
-fn format_inner(text: &str, config: &Configuration) -> Result<String> {
+fn format_inner(text: &str, config: &Configuration) -> Result<String, FormatError> {
   let text = strip_bom(text);
   let node = parse_node(text)?;
 
@@ -33,7 +29,7 @@ pub fn trace_file(_file_path: &Path, text: &str, config: &Configuration) -> dpri
   dprint_core::formatting::trace_printing(|| generate(&node, text, config), config_to_print_options(text, config))
 }
 
-fn parse_node(text: &str) -> Result<Dockerfile> {
+fn parse_node(text: &str) -> Result<Dockerfile, FormatError> {
   Ok(Dockerfile::parse(text)?)
 }
 

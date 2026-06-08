@@ -1,0 +1,89 @@
+== should normalize the instruction line and preserve the body verbatim ==
+RUN    <<EOF
+echo "Hello" >> /hello
+echo "World!" >> /hello
+EOF
+
+[expect]
+RUN <<EOF
+echo "Hello" >> /hello
+echo "World!" >> /hello
+EOF
+
+== should preserve body indentation ==
+RUN python3 <<EOF
+print("hi")
+if True:
+    print("x")
+EOF
+
+[expect]
+RUN python3 <<EOF
+print("hi")
+if True:
+    print("x")
+EOF
+
+== should support a heredoc that creates a file with COPY ==
+COPY   <<EOF   /app/hello.txt
+Hello
+World
+EOF
+
+[expect]
+COPY <<EOF /app/hello.txt
+Hello
+World
+EOF
+
+== should support a quoted delimiter ==
+RUN <<'EOF'
+$keep $literal
+EOF
+
+[expect]
+RUN <<'EOF'
+$keep $literal
+EOF
+
+== should support multiple heredocs in one instruction ==
+RUN <<EOF1 <<EOF2
+first
+EOF1
+second
+EOF2
+
+[expect]
+RUN <<EOF1 <<EOF2
+first
+EOF1
+second
+EOF2
+
+== should not treat a shell bit-shift as a heredoc ==
+RUN echo $((1<<2))
+
+[expect]
+RUN echo $((1<<2))
+
+== should handle a heredoc followed by another instruction ==
+RUN <<EOF
+hi
+EOF
+RUN echo done
+
+[expect]
+RUN <<EOF
+hi
+EOF
+RUN echo done
+
+== should format a heredoc nested in ONBUILD ==
+ONBUILD   RUN <<EOF
+hi
+EOF
+
+[expect]
+ONBUILD RUN <<EOF
+hi
+EOF

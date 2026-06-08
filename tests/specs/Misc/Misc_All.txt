@@ -27,5 +27,5 @@ WORKDIR b
 ONBUILD ADD . /app/src
 ONBUILD RUN /usr/local/bin/python-build --dir /app/src
 STOPSIGNAL SIGKILL
-HEALTHCHECK --interval=30s  CMD command
+HEALTHCHECK --interval=30s CMD command
 SHELL ["powershell", "-command"]
