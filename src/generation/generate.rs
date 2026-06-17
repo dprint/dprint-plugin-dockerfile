@@ -295,55 +295,103 @@ fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction, context: &mut Conte
   items
 }
 
+/// The indentation of a `HEALTHCHECK` command continued onto its own line,
+/// matching the style shown in Docker's documentation.
+const HEALTHCHECK_CONTINUATION_INDENT: u32 = 2;
+
 fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("HEALTHCHECK"));
+
+  // the options render inline as the group's first value, each with a leading
+  // space so they separate from the keyword (an empty value when there are none)
+  let mut flags_items = PrintItems::new();
   for flag in &node.flags {
-    items.push_sc(sc!(" --"));
-    items.extend(gen_node((&flag.name).into(), context));
-    items.push_sc(sc!("="));
-    items.extend(gen_node((&flag.value).into(), context));
+    flags_items.push_sc(sc!(" --"));
+    flags_items.extend(gen_node((&flag.name).into(), context));
+    flags_items.push_sc(sc!("="));
+    flags_items.extend(gen_node((&flag.value).into(), context));
   }
-  match &node.cmd {
-    Some(instruction) => {
-      // the byte position just after the last token preceding the nested command
-      let prev_end = node.flags.last().map(|f| f.span.end).unwrap_or(node.span.start + "HEALTHCHECK".len());
-      let gap = context.span_text(&Span::new(prev_end, instruction.span().start));
-      // keep an author-written line continuation before the nested command (e.g.
-      // `HEALTHCHECK --opt \` then `CMD ...`) rather than collapsing it (#29)
-      match continuation_indent(gap, context.escape()) {
-        Some(indent) => {
-          items.push_sc(space_continuation(context.escape()));
-          items.push_signal(Signal::NewLine);
-          if !indent.is_empty() {
-            items.extend(gen_from_raw_string(indent));
-          }
-        }
-        None => items.push_sc(sc!(" ")),
-      }
-      items.extend(gen_node((&**instruction).into(), context));
+  let command_items = match &node.cmd {
+    Some(instruction) => gen_node((&**instruction).into(), context),
+    None => {
+      let mut none = PrintItems::new();
+      none.push_sc(sc!("NONE"));
+      none
     }
-    // a continuation before NONE (`HEALTHCHECK --opt \` then `NONE`) is collapsed
-    // since NONE is short and never benefits from its own line
-    None => items.push_sc(sc!(" NONE")),
-  }
+  };
+
+  // group the options and the nested command so they sit on one line when they
+  // fit under the line width and otherwise break onto an aligned continuation
+  // line (#29). a break the author already wrote forces the multi-line form.
+  let first_line = node.span.relative_span(context.dockerfile).0;
+  let command_span = node.cmd.as_ref().map(|c| c.span()).unwrap_or(node.span);
+  let command_line = command_span.relative_span(context.dockerfile).0;
+  let force_use_new_lines = command_line > first_line;
+  items.extend(gen_grouped_values(
+    vec![(flags_items, first_line), (command_items, command_line)],
+    HEALTHCHECK_CONTINUATION_INDENT,
+    force_use_new_lines,
+    context,
+  ));
   items
 }
 
-/// If the text between an instruction's last token and its nested command holds
-/// a line continuation, returns the indentation of the continued line (the
-/// whitespace following the final newline) so the break can be preserved (#29).
-/// Returns `None` when there is no continuation, signalling a single space.
-fn continuation_indent(gap: &str, escape: char) -> Option<&str> {
-  let first_newline = gap.find(['\n', '\r'])?;
-  // the segment before the newline must end in the escape character
-  if !gap[..first_newline].trim_end().ends_with(escape) {
-    return None;
-  }
-  // the nested command sits after the final newline; reuse its leading whitespace
-  let after = &gap[gap.rfind(['\n', '\r']).unwrap() + 1..];
-  let indent_end = after.find(|c: char| c != ' ' && c != '\t').unwrap_or(after.len());
-  Some(&after[..indent_end])
+/// Groups pre-rendered values so they sit on one line when they fit under the
+/// line width and otherwise break onto indented continuation lines. Mirrors
+/// [`gen_multi_line_items`] but takes already-generated items rather than nodes.
+fn gen_grouped_values(values: Vec<(PrintItems, usize)>, indent_width: u32, force_use_new_lines: bool, context: &Context) -> PrintItems {
+  let count = values.len();
+  let space_continuation = space_continuation(context.escape());
+  let indent_text = " ".repeat(indent_width as usize);
+  ir_helpers::gen_separated_values(
+    |is_multiline| {
+      values
+        .into_iter()
+        .enumerate()
+        .map(|(i, (value_items, line_index))| {
+          let mut items = PrintItems::new();
+          // indent a continued value with literal spaces rather than a dprint
+          // indent level: a level would also re-indent any newline inside the
+          // value (e.g. a CMD that itself continues) on every format pass
+          if i > 0 {
+            items.push_condition(conditions::if_true("continuationIndent", is_multiline.create_resolver(), gen_from_raw_string(&indent_text)));
+          }
+          items.extend(value_items);
+          if i < count - 1 {
+            items.push_condition(conditions::if_true("endLineText", is_multiline.create_resolver(), {
+              let mut tail = PrintItems::new();
+              tail.push_sc(space_continuation);
+              tail
+            }));
+          }
+          ir_helpers::GeneratedValue {
+            items,
+            lines_span: Some(ir_helpers::LinesSpan {
+              start_line: line_index,
+              end_line: line_index,
+            }),
+            allow_inline_multi_line: false,
+            allow_inline_single_line: false,
+          }
+        })
+        .collect()
+    },
+    ir_helpers::GenSeparatedValuesOptions {
+      prefer_hanging: false,
+      force_use_new_lines,
+      allow_blank_lines: false,
+      single_line_options: SingleLineOptions {
+        space_at_start: false,
+        space_at_end: false,
+        separator: Signal::SpaceOrNewLine.into(),
+      },
+      indent_width: 0_u8,
+      multi_line_options: ir_helpers::MultiLineOptions::same_line_no_indent(),
+      force_possible_newline_at_start: false,
+    },
+  )
+  .items
 }
 
 fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction, context: &mut Context<'a>) -> PrintItems {
