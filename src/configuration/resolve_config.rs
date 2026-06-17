@@ -40,6 +40,7 @@ pub fn resolve_config(config: ConfigKeyMap, global_config: &GlobalConfiguration)
       global_config.new_line_kind.unwrap_or(RECOMMENDED_GLOBAL_CONFIGURATION.new_line_kind),
       &mut diagnostics,
     ),
+    healthcheck_cmd_new_line: get_value(&mut config, "healthcheckCmdNewLine", false, &mut diagnostics),
   };
 
   diagnostics.extend(get_unknown_property_diagnostics(config));

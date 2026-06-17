@@ -323,11 +323,13 @@ fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction, context: &m
 
   // group the options and the nested command so they sit on one line when they
   // fit under the line width and otherwise break onto an aligned continuation
-  // line (#29). a break the author already wrote forces the multi-line form.
+  // line (#29). a break the author already wrote forces the multi-line form, as
+  // does `healthcheckCmdNewLine` when there's a command preceded by options.
   let first_line = node.span.relative_span(context.dockerfile).0;
   let command_span = node.cmd.as_ref().map(|c| c.span()).unwrap_or(node.span);
   let command_line = command_span.relative_span(context.dockerfile).0;
-  let force_use_new_lines = command_line > first_line;
+  let proactive_split = context.config.healthcheck_cmd_new_line && node.cmd.is_some() && !node.flags.is_empty();
+  let force_use_new_lines = command_line > first_line || proactive_split;
   items.extend(gen_grouped_values(
     vec![(flags_items, first_line), (command_items, command_line)],
     HEALTHCHECK_CONTINUATION_INDENT,

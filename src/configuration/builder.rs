@@ -64,6 +64,13 @@ impl ConfigurationBuilder {
     self.insert("newLineKind", value.to_string().into())
   }
 
+  /// Whether to always break a `HEALTHCHECK` command onto its own continuation
+  /// line when the instruction has options, even if it would fit on one line.
+  /// Default: `false`
+  pub fn healthcheck_cmd_new_line(&mut self, value: bool) -> &mut Self {
+    self.insert("healthcheckCmdNewLine", value.into())
+  }
+
   #[cfg(test)]
   pub(super) fn get_inner_config(&self) -> ConfigKeyMap {
     self.config.clone()
@@ -85,10 +92,13 @@ mod tests {
   #[test]
   fn check_all_values_set() {
     let mut config = ConfigurationBuilder::new();
-    config.new_line_kind(NewLineKind::CarriageReturnLineFeed).line_width(90);
+    config
+      .new_line_kind(NewLineKind::CarriageReturnLineFeed)
+      .line_width(90)
+      .healthcheck_cmd_new_line(true);
 
     let inner_config = config.get_inner_config();
-    assert_eq!(inner_config.len(), 2);
+    assert_eq!(inner_config.len(), 3);
     let diagnostics = resolve_config(inner_config, &Default::default()).diagnostics;
     assert_eq!(diagnostics.len(), 0);
   }
