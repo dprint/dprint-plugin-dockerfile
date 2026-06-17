@@ -9,7 +9,7 @@ use super::helpers::parse_comments;
 use crate::configuration::Configuration;
 
 pub struct Context<'a> {
-  pub _config: &'a Configuration,
+  pub config: &'a Configuration,
   pub dockerfile: &'a Dockerfile,
   pub text: &'a str,
   pub handled_comments: HashSet<usize>,
@@ -27,7 +27,7 @@ pub struct Context<'a> {
 impl<'a> Context<'a> {
   pub fn new(text: &'a str, dockerfile: &'a Dockerfile, config: &'a Configuration) -> Self {
     Self {
-      _config: config,
+      config,
       text,
       dockerfile,
       handled_comments: HashSet::new(),

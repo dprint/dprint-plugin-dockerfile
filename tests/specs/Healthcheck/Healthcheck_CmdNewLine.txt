@@ -1,0 +1,33 @@
+~~ healthcheckCmdNewLine: true ~~
+== should split CMD onto its own line when there are options ==
+HEALTHCHECK --interval=30s CMD curl -f http://localhost/
+
+[expect]
+HEALTHCHECK --interval=30s \
+  CMD curl -f http://localhost/
+
+== should split before an exec-form command ==
+HEALTHCHECK --retries=3 CMD ["curl", "-f", "http://localhost/"]
+
+[expect]
+HEALTHCHECK --retries=3 \
+  CMD ["curl", "-f", "http://localhost/"]
+
+== should not split when there are no options ==
+HEALTHCHECK CMD curl -f http://localhost/
+
+[expect]
+HEALTHCHECK CMD curl -f http://localhost/
+
+== should not split NONE ==
+HEALTHCHECK --interval=30s NONE
+
+[expect]
+HEALTHCHECK --interval=30s NONE
+
+== should collapse a continuation before NONE ==
+HEALTHCHECK --interval=30s \
+  NONE
+
+[expect]
+HEALTHCHECK --interval=30s NONE
