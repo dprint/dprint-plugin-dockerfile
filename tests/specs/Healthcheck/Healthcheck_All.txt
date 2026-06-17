@@ -17,3 +17,27 @@ HEALTHCHECK    NONE
 
 [expect]
 HEALTHCHECK NONE
+
+== should keep a line continuation before CMD ==
+HEALTHCHECK --interval=5m --timeout=3s \
+  CMD curl -f http://localhost/ || exit 1
+
+[expect]
+HEALTHCHECK --interval=5m --timeout=3s \
+  CMD curl -f http://localhost/ || exit 1
+
+== should normalize spacing but keep a preserved continuation's indentation ==
+HEALTHCHECK   --interval=5m    \
+      CMD   curl -f http://localhost/
+
+[expect]
+HEALTHCHECK --interval=5m \
+      CMD curl -f http://localhost/
+
+== should keep a continuation before CMD when there are no options ==
+HEALTHCHECK \
+  CMD curl -f http://localhost/
+
+[expect]
+HEALTHCHECK \
+  CMD curl -f http://localhost/

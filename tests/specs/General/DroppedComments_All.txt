@@ -63,7 +63,8 @@ CMD curl
 
 [expect]
 # healthcheck comment
-HEALTHCHECK --interval=30s CMD curl
+HEALTHCHECK --interval=30s \
+CMD curl
 
 == keeps a comment in ONBUILD ==
 ONBUILD \

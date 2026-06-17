@@ -297,19 +297,53 @@ fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction, context: &mut Conte
 
 fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
-  items.push_sc(sc!("HEALTHCHECK "));
+  items.push_sc(sc!("HEALTHCHECK"));
   for flag in &node.flags {
-    items.push_sc(sc!("--"));
+    items.push_sc(sc!(" --"));
     items.extend(gen_node((&flag.name).into(), context));
     items.push_sc(sc!("="));
     items.extend(gen_node((&flag.value).into(), context));
-    items.push_sc(sc!(" "));
   }
   match &node.cmd {
-    Some(instruction) => items.extend(gen_node((&**instruction).into(), context)),
-    None => items.push_sc(sc!("NONE")),
+    Some(instruction) => {
+      // the byte position just after the last token preceding the nested command
+      let prev_end = node.flags.last().map(|f| f.span.end).unwrap_or(node.span.start + "HEALTHCHECK".len());
+      let gap = context.span_text(&Span::new(prev_end, instruction.span().start));
+      // keep an author-written line continuation before the nested command (e.g.
+      // `HEALTHCHECK --opt \` then `CMD ...`) rather than collapsing it (#29)
+      match continuation_indent(gap, context.escape()) {
+        Some(indent) => {
+          items.push_sc(space_continuation(context.escape()));
+          items.push_signal(Signal::NewLine);
+          if !indent.is_empty() {
+            items.extend(gen_from_raw_string(indent));
+          }
+        }
+        None => items.push_sc(sc!(" ")),
+      }
+      items.extend(gen_node((&**instruction).into(), context));
+    }
+    // a continuation before NONE (`HEALTHCHECK --opt \` then `NONE`) is collapsed
+    // since NONE is short and never benefits from its own line
+    None => items.push_sc(sc!(" NONE")),
   }
   items
+}
+
+/// If the text between an instruction's last token and its nested command holds
+/// a line continuation, returns the indentation of the continued line (the
+/// whitespace following the final newline) so the break can be preserved (#29).
+/// Returns `None` when there is no continuation, signalling a single space.
+fn continuation_indent(gap: &str, escape: char) -> Option<&str> {
+  let first_newline = gap.find(['\n', '\r'])?;
+  // the segment before the newline must end in the escape character
+  if !gap[..first_newline].trim_end().ends_with(escape) {
+    return None;
+  }
+  // the nested command sits after the final newline; reuse its leading whitespace
+  let after = &gap[gap.rfind(['\n', '\r']).unwrap() + 1..];
+  let indent_end = after.find(|c: char| c != ' ' && c != '\t').unwrap_or(after.len());
+  Some(&after[..indent_end])
 }
 
 fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction, context: &mut Context<'a>) -> PrintItems {
