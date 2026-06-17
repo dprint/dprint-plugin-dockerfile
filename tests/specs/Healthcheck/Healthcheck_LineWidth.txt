@@ -1,0 +1,20 @@
+~~ lineWidth: 40 ~~
+== should wrap a single-line command that exceeds the line width ==
+HEALTHCHECK --interval=30s CMD curl -f http://localhost/ || exit 1
+
+[expect]
+HEALTHCHECK --interval=30s \
+  CMD curl -f http://localhost/ || exit 1
+
+== should wrap before CMD when there are no options ==
+HEALTHCHECK CMD curl -f http://localhost/ || exit 1
+
+[expect]
+HEALTHCHECK \
+  CMD curl -f http://localhost/ || exit 1
+
+== should keep a command that fits on one line ==
+HEALTHCHECK --retries=3 CMD test
+
+[expect]
+HEALTHCHECK --retries=3 CMD test

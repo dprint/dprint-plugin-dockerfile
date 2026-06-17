@@ -17,3 +17,60 @@ HEALTHCHECK    NONE
 
 [expect]
 HEALTHCHECK NONE
+
+== should keep a line continuation before CMD ==
+HEALTHCHECK --interval=5m --timeout=3s \
+  CMD curl -f http://localhost/ || exit 1
+
+[expect]
+HEALTHCHECK --interval=5m --timeout=3s \
+  CMD curl -f http://localhost/ || exit 1
+
+== should normalize a preserved continuation to a two-space indent ==
+HEALTHCHECK   --interval=5m    \
+      CMD   curl -f http://localhost/
+
+[expect]
+HEALTHCHECK --interval=5m \
+  CMD curl -f http://localhost/
+
+== should keep a continuation before CMD when there are no options ==
+HEALTHCHECK \
+  CMD curl -f http://localhost/
+
+[expect]
+HEALTHCHECK \
+  CMD curl -f http://localhost/
+
+== should keep a continuation before an exec-form command ==
+HEALTHCHECK --interval=5m \
+  CMD [ "curl" , "-f" , "http://localhost/" ]
+
+[expect]
+HEALTHCHECK --interval=5m \
+  CMD ["curl", "-f", "http://localhost/"]
+
+== should keep a continuation before CMD and inside the command ==
+HEALTHCHECK --interval=5m \
+  CMD curl -f http://localhost/ \
+    && echo ok
+
+[expect]
+HEALTHCHECK --interval=5m \
+  CMD curl -f http://localhost/ \
+    && echo ok
+
+== should default to a two-space indent when the command is flush left ==
+HEALTHCHECK --interval=5m \
+CMD curl -f http://localhost/
+
+[expect]
+HEALTHCHECK --interval=5m \
+  CMD curl -f http://localhost/
+
+== should collapse a continuation before NONE ==
+HEALTHCHECK --interval=30s \
+  NONE
+
+[expect]
+HEALTHCHECK --interval=30s NONE

@@ -28,6 +28,16 @@ RUN a `
 RUN a `
     b
 
+== should keep a healthcheck continuation under a backtick escape directive ==
+# escape=`
+HEALTHCHECK --interval=5m `
+  CMD curl -f http://localhost/
+
+[expect]
+# escape=`
+HEALTHCHECK --interval=5m `
+  CMD curl -f http://localhost/
+
 == should drop a dangling trailing backslash in run ==
 RUN echo a\
 
