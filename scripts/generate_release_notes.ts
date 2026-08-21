@@ -23,7 +23,7 @@ Then in your project's dprint configuration file:
        // config goes here
      },
      "plugins": [
-       "https://plugins.dprint.dev/dockerfile-${version}.wasm"
+       "npm:@dprint/dockerfile@${version}"
      ]
    }
    \`\`\`
