@@ -7,15 +7,15 @@ macro_rules! create_node_ref {
     #[derive(Clone)]
     pub enum Node<'a> {
       /// our own created comment
-      CommentRc(Rc<SpannedComment>),
+      CommentRc(Rc<SpannedComment<'a>>),
       $(
-        $variant_name(&'a $node_name),
+        $variant_name(&'a $node_name<'a>),
       )*
     }
 
     $(
-      impl<'a> From<&'a $node_name> for Node<'a> {
-        fn from(instruction: &'a $node_name) -> Node<'a> {
+      impl<'a> From<&'a $node_name<'a>> for Node<'a> {
+        fn from(instruction: &'a $node_name<'a>) -> Node<'a> {
           Node::$variant_name(instruction)
         }
       }
@@ -47,7 +47,7 @@ create_node_ref!(
   Comment(SpannedComment),
 );
 
-impl<'a> Node<'a> {
+impl Node<'_> {
   pub fn span(&self) -> Span {
     use Node::*;
     match self {
@@ -85,7 +85,7 @@ impl<'a> Node<'a> {
   }
 }
 
-pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment> {
+pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment<'_>> {
   let mut comments = Vec::new();
   let mut char_iterator = text.char_indices();
   let mut in_start_comment_context = true;
@@ -108,7 +108,7 @@ pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment> {
       }
       comments.push(SpannedComment {
         span: Span::new(offset + start_index, offset + end_index),
-        content: text[start_index..end_index].to_string(),
+        content: &text[start_index..end_index],
       });
       in_start_comment_context = true;
     } else {
@@ -119,8 +119,8 @@ pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment> {
   comments
 }
 
-impl<'a> From<&'a Instruction> for Node<'a> {
-  fn from(instruction: &'a Instruction) -> Node<'a> {
+impl<'a> From<&'a Instruction<'a>> for Node<'a> {
+  fn from(instruction: &'a Instruction<'a>) -> Node<'a> {
     use Instruction::*;
     match instruction {
       From(node) => node.into(),
@@ -142,8 +142,8 @@ impl<'a> From<&'a Instruction> for Node<'a> {
   }
 }
 
-impl<'a> From<&'a BreakableStringComponent> for Node<'a> {
-  fn from(component: &'a BreakableStringComponent) -> Node<'a> {
+impl<'a> From<&'a BreakableStringComponent<'a>> for Node<'a> {
+  fn from(component: &'a BreakableStringComponent<'a>) -> Node<'a> {
     use BreakableStringComponent::*;
     match component {
       String(node) => node.into(),

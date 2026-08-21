@@ -10,7 +10,7 @@ use crate::configuration::Configuration;
 
 pub struct Context<'a> {
   pub config: &'a Configuration,
-  pub dockerfile: &'a Dockerfile,
+  pub dockerfile: &'a Dockerfile<'a>,
   pub text: &'a str,
   pub handled_comments: HashSet<usize>,
   current_node: Option<Node<'a>>,
@@ -28,7 +28,7 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-  pub fn new(text: &'a str, dockerfile: &'a Dockerfile, config: &'a Configuration) -> Self {
+  pub fn new(text: &'a str, dockerfile: &'a Dockerfile<'a>, config: &'a Configuration) -> Self {
     Self {
       config,
       text,

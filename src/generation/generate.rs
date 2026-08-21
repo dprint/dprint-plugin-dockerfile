@@ -8,7 +8,7 @@ use super::helpers::*;
 use crate::ast::*;
 use crate::configuration::Configuration;
 
-pub fn generate(file: &Dockerfile, text: &str, config: &Configuration) -> PrintItems {
+pub fn generate<'a>(file: &'a Dockerfile<'a>, text: &'a str, config: &'a Configuration) -> PrintItems {
   let mut context = Context::new(text, file, config);
   let mut items = PrintItems::new();
   let top_level_nodes = context.gen_nodes_with_comments(0, text.len(), true, file.instructions.iter().map(|i| i.into()));
@@ -21,7 +21,7 @@ pub fn generate(file: &Dockerfile, text: &str, config: &Configuration) -> PrintI
     // indentation from it and let the printer add back the indentation of
     // where the instruction now sits
     context.dedent_width = if config.indent_stages {
-      line_indent_width(text, node.span().start)
+      line_indent_width(file, node.span().start)
     } else {
       0
     };
@@ -97,9 +97,9 @@ fn stage_indent_width(config: &Configuration) -> u32 {
 }
 
 /// The width of the indentation of the line the given position is on.
-fn line_indent_width(text: &str, pos: usize) -> usize {
-  let line_start = text[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
-  text[line_start..pos].bytes().take_while(|b| matches!(b, b' ' | b'\t')).count()
+fn line_indent_width(file: &Dockerfile, pos: usize) -> usize {
+  let line_start = file.line_start(file.line_index(pos));
+  file.content[line_start..pos].bytes().take_while(|b| matches!(b, b' ' | b'\t')).count()
 }
 
 fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
@@ -134,7 +134,7 @@ fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
   items
 }
 
-fn gen_arg_instruction<'a>(node: &'a ArgInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_arg_instruction<'a>(node: &'a ArgInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
 
   items.push_sc(sc!("ARG "));
@@ -148,7 +148,7 @@ fn gen_arg_instruction<'a>(node: &'a ArgInstruction, context: &mut Context<'a>) 
   items
 }
 
-fn gen_cmd_instruction<'a>(node: &'a CmdInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_cmd_instruction<'a>(node: &'a CmdInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("CMD "));
   items.extend(match &node.expr {
@@ -158,7 +158,7 @@ fn gen_cmd_instruction<'a>(node: &'a CmdInstruction, context: &mut Context<'a>) 
   items
 }
 
-fn gen_copy_instruction<'a>(node: &'a CopyInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_copy_instruction<'a>(node: &'a CopyInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   let prefix = sc!("COPY ");
   items.push_sc(prefix);
@@ -197,7 +197,7 @@ fn gen_copy_instruction<'a>(node: &'a CopyInstruction, context: &mut Context<'a>
   items
 }
 
-fn gen_entrypoint_instruction<'a>(node: &'a EntrypointInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_entrypoint_instruction<'a>(node: &'a EntrypointInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("ENTRYPOINT "));
   items.extend(match &node.expr {
@@ -207,7 +207,7 @@ fn gen_entrypoint_instruction<'a>(node: &'a EntrypointInstruction, context: &mut
   items
 }
 
-fn gen_env_instruction<'a>(node: &'a EnvInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_env_instruction<'a>(node: &'a EnvInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   let nodes = context.gen_nodes_with_comments(node.span.start, node.span.end, false, node.vars.iter().map(|i| i.into()));
   let prefix = sc!("ENV ");
@@ -216,7 +216,7 @@ fn gen_env_instruction<'a>(node: &'a EnvInstruction, context: &mut Context<'a>) 
   items
 }
 
-fn gen_env_var<'a>(node: &'a EnvVar, context: &mut Context<'a>) -> PrintItems {
+fn gen_env_var<'a>(node: &'a EnvVar<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.extend(gen_node((&node.key).into(), context));
   items.push_sc(sc!("="));
@@ -224,7 +224,7 @@ fn gen_env_var<'a>(node: &'a EnvVar, context: &mut Context<'a>) -> PrintItems {
   items
 }
 
-fn gen_from_instruction<'a>(node: &'a FromInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_from_instruction<'a>(node: &'a FromInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("FROM "));
   for flag in &node.flags {
@@ -239,7 +239,7 @@ fn gen_from_instruction<'a>(node: &'a FromInstruction, context: &mut Context<'a>
   items
 }
 
-fn gen_from_flag<'a>(node: &'a FromFlag, context: &mut Context<'a>) -> PrintItems {
+fn gen_from_flag<'a>(node: &'a FromFlag<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("--"));
   items.extend(gen_node((&node.name).into(), context));
@@ -248,7 +248,7 @@ fn gen_from_flag<'a>(node: &'a FromFlag, context: &mut Context<'a>) -> PrintItem
   items
 }
 
-fn gen_label_instruction<'a>(node: &'a LabelInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_label_instruction<'a>(node: &'a LabelInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   let prefix = sc!("LABEL ");
   items.push_sc(prefix);
@@ -258,7 +258,7 @@ fn gen_label_instruction<'a>(node: &'a LabelInstruction, context: &mut Context<'
   items
 }
 
-fn gen_label<'a>(node: &'a Label, context: &mut Context<'a>) -> PrintItems {
+fn gen_label<'a>(node: &'a Label<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.extend(gen_node((&node.name).into(), context));
   items.push_sc(sc!("="));
@@ -271,7 +271,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
   let nodes_with_line_index = nodes
     .into_iter()
     .map(|node| {
-      let (line_index, _) = node.span().relative_span(context.dockerfile);
+      let line_index = context.dockerfile.line_index(node.span().start);
       (node, line_index)
     })
     .collect::<Vec<_>>();
@@ -329,7 +329,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
   .items
 }
 
-fn gen_misc_instruction<'a>(node: &'a MiscInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_misc_instruction<'a>(node: &'a MiscInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.extend(gen_node((&node.instruction).into(), context));
   items.push_sc(sc!(" "));
@@ -337,7 +337,7 @@ fn gen_misc_instruction<'a>(node: &'a MiscInstruction, context: &mut Context<'a>
   items
 }
 
-fn gen_run_instruction<'a>(node: &'a RunInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_run_instruction<'a>(node: &'a RunInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
 
   items.push_sc(sc!("RUN "));
@@ -349,7 +349,7 @@ fn gen_run_instruction<'a>(node: &'a RunInstruction, context: &mut Context<'a>) 
   items
 }
 
-fn gen_shell_instruction<'a>(node: &'a ShellInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_shell_instruction<'a>(node: &'a ShellInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("SHELL "));
   items.extend(match &node.expr {
@@ -359,7 +359,7 @@ fn gen_shell_instruction<'a>(node: &'a ShellInstruction, context: &mut Context<'
   items
 }
 
-fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("ONBUILD "));
   items.extend(gen_node((&*node.instruction).into(), context));
@@ -370,7 +370,7 @@ fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction, context: &mut Conte
 /// matching the style shown in Docker's documentation.
 const HEALTHCHECK_CONTINUATION_INDENT: u32 = 2;
 
-fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("HEALTHCHECK"));
 
@@ -396,9 +396,9 @@ fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction, context: &m
   // fit under the line width and otherwise break onto an aligned continuation
   // line (#29). a break the author already wrote forces the multi-line form, as
   // does `healthcheckCmdNewLine` when there's a command preceded by options.
-  let first_line = node.span.relative_span(context.dockerfile).0;
+  let first_line = context.dockerfile.line_index(node.span.start);
   let command_span = node.cmd.as_ref().map(|c| c.span()).unwrap_or(node.span);
-  let command_line = command_span.relative_span(context.dockerfile).0;
+  let command_line = context.dockerfile.line_index(command_span.start);
   let proactive_split = context.config.healthcheck_cmd_new_line && node.cmd.is_some() && !node.flags.is_empty();
   let force_use_new_lines = command_line > first_line || proactive_split;
   items.extend(gen_grouped_values(
@@ -472,7 +472,7 @@ fn gen_grouped_values(values: Vec<(PrintItems, usize)>, indent_width: u32, force
   .items
 }
 
-fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction, context: &mut Context<'a>) -> PrintItems {
+fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   // the first line is a normal instruction and is formatted as such
   items.extend(gen_node((&*node.instruction).into(), context));
@@ -482,12 +482,12 @@ fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction, context: &mut Conte
   // indentation itself when the text spans multiple lines)
   items.push_signal(Signal::NewLine);
   items.push_signal(Signal::StartIgnoringIndent);
-  items.extend(gen_from_raw_string(&node.body));
+  items.extend(gen_from_raw_string(node.body));
   items.push_signal(Signal::FinishIgnoringIndent);
   items
 }
 
-fn gen_string_array<'a>(node: &'a StringArray, context: &mut Context<'a>) -> PrintItems {
+fn gen_string_array<'a>(node: &'a StringArray<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   items.push_sc(sc!("["));
   for (i, element) in node.elements.iter().enumerate() {
@@ -510,7 +510,7 @@ fn space_continuation(escape: char) -> &'static StringContainer {
   if escape == '`' { sc!(" `") } else { sc!(" \\") }
 }
 
-fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>) -> PrintItems {
+fn gen_breakable_string<'a>(node: &'a BreakableString<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   let is_parent_env_var = matches!(context.parent(), Some(Node::EnvVar(_)));
   let span_text = context.span_text(&node.span);
@@ -590,7 +590,7 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
 
 /// Determines the indentation to use for a comment within a breakable string by
 /// reusing the leading whitespace of the closest surrounding string component.
-fn comment_indentation(components: &[BreakableStringComponent], index: usize) -> &str {
+fn comment_indentation<'c>(components: &'c [BreakableStringComponent], index: usize) -> &'c str {
   let following = components[index + 1..].iter().find_map(string_leading_whitespace);
   if let Some(whitespace) = following {
     return whitespace;
@@ -598,7 +598,7 @@ fn comment_indentation(components: &[BreakableStringComponent], index: usize) ->
   components[..index].iter().rev().find_map(string_leading_whitespace).unwrap_or("")
 }
 
-fn string_leading_whitespace(component: &BreakableStringComponent) -> Option<&str> {
+fn string_leading_whitespace<'c>(component: &'c BreakableStringComponent) -> Option<&'c str> {
   match component {
     BreakableStringComponent::String(s) => Some(&s.content[..s.content.len() - s.content.trim_start().len()]),
     _ => None,
@@ -611,7 +611,7 @@ fn dedent(text: &str, width: usize) -> &str {
   &text[count..]
 }
 
-fn gen_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintItems {
+fn gen_string<'a>(node: &'a SpannedString<'a>, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   if context.gen_string_content {
     // don't trim this because it's the content
@@ -728,7 +728,7 @@ fn collapse_shell_whitespace(text: &str, drop_leading: bool, quote: &mut Option<
   out
 }
 
-fn gen_copy_flag<'a>(node: &'a CopyFlag, context: &mut Context<'a>) -> PrintItems {
+fn gen_copy_flag<'a>(node: &'a CopyFlag<'a>, context: &mut Context<'a>) -> PrintItems {
   // ex: --from=foo
   let mut items = PrintItems::new();
   items.push_sc(sc!("--"));
@@ -738,13 +738,13 @@ fn gen_copy_flag<'a>(node: &'a CopyFlag, context: &mut Context<'a>) -> PrintItem
   items
 }
 
-fn gen_comment<'a>(comment: &SpannedComment, context: &mut Context<'a>) -> PrintItems {
+fn gen_comment(comment: &SpannedComment, context: &mut Context) -> PrintItems {
   let mut items = PrintItems::new();
   if !context.handled_comments.insert(comment.span.start) {
     return items;
   }
 
-  items.extend(gen_comment_text(&comment.content));
+  items.extend(gen_comment_text(comment.content));
   items.push_signal(Signal::ExpectNewLine);
 
   items

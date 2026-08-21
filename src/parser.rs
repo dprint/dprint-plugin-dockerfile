@@ -5,6 +5,8 @@
 // recovered from `&str` subslices via pointer arithmetic against the original
 // input (see [`Parser::off`]).
 
+use std::borrow::Cow;
+
 use monch::*;
 
 use crate::ast::*;
@@ -12,15 +14,11 @@ use crate::ast::*;
 type PResult<'a, T> = Result<(&'a str, T), ParseErrorFailureError>;
 
 /// Parses a Dockerfile from a string.
-pub fn parse(text: &str) -> Result<Dockerfile, ParseErrorFailureError> {
+pub fn parse(text: &str) -> Result<Dockerfile<'_>, ParseErrorFailureError> {
   let escape = detect_escape(text);
   let parser = Parser { base: text, escape };
   let instructions = parser.parse_dockerfile(text)?;
-  Ok(Dockerfile {
-    content: text.to_string(),
-    instructions,
-    escape,
-  })
+  Ok(Dockerfile::new(text, instructions, escape))
 }
 
 /// Determines the escape character from a leading `# escape=` parser directive,
@@ -68,7 +66,7 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-  fn parse_dockerfile(&self, mut input: &'a str) -> Result<Vec<Instruction>, ParseErrorFailureError> {
+  fn parse_dockerfile(&self, mut input: &'a str) -> Result<Vec<Instruction<'a>>, ParseErrorFailureError> {
     let mut instructions = Vec::new();
     loop {
       // a meta step starts with optional insignificant whitespace
@@ -112,7 +110,7 @@ impl<'a> Parser<'a> {
     Ok(instructions)
   }
 
-  fn parse_instruction(&self, input: &'a str) -> PResult<'a, Instruction> {
+  fn parse_instruction(&self, input: &'a str) -> PResult<'a, Instruction<'a>> {
     let (after_kw, keyword) = alpha0(input);
     let lower = keyword.to_ascii_lowercase();
     if KEYWORDS.contains(&lower.as_str()) {
@@ -144,7 +142,7 @@ impl<'a> Parser<'a> {
     self.parse_misc(input)
   }
 
-  fn parse_from(&self, input: &'a str, start: usize) -> PResult<'a, Instruction> {
+  fn parse_from(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     let mut flags = Vec::new();
     let mut input = input;
 
@@ -173,25 +171,25 @@ impl<'a> Parser<'a> {
     Ok((end, Instruction::From(FromInstruction { span, flags, image, alias })))
   }
 
-  fn parse_image(&self, input: &'a str) -> PResult<'a, SpannedString> {
+  fn parse_image(&self, input: &'a str) -> PResult<'a, SpannedString<'a>> {
     let image = take_while(|c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | ':' | '/' | '$' | '{' | '}' | '@'));
     match if_not_empty(image)(input) {
-      Ok((rest, text)) => Ok((rest, self.spanned(input, rest, text.to_string()))),
+      Ok((rest, text)) => Ok((rest, self.spanned(input, rest, text))),
       Err(_) => Err(fail("missing from image")),
     }
   }
 
-  fn parse_alias(&self, after_image: &'a str) -> Option<(&'a str, SpannedString)> {
+  fn parse_alias(&self, after_image: &'a str) -> Option<(&'a str, SpannedString<'a>)> {
     // from_alias_outer = arg_ws ~ ^"as" ~ arg_ws ~ from_alias
     let after_ws = self.arg_ws(after_image)?;
     let after_as = strip_prefix_ci(after_ws, "as")?;
     let alias_start = self.arg_ws(after_as)?;
     let alias = take_while(|c: char| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'));
     let (rest, text) = if_not_empty(alias)(alias_start).ok()?;
-    Some((rest, self.spanned(alias_start, rest, text.to_string())))
+    Some((rest, self.spanned(alias_start, rest, text)))
   }
 
-  fn parse_shell_or_exec(&self, input: &'a str, start: usize, kind: ExprKind) -> PResult<'a, Instruction> {
+  fn parse_shell_or_exec(&self, input: &'a str, start: usize, kind: ExprKind) -> PResult<'a, Instruction<'a>> {
     let (rest, span, expr) = if input.starts_with('[') {
       match self.string_array(input) {
         Ok((rest, array)) => {
@@ -207,13 +205,13 @@ impl<'a> Parser<'a> {
     Ok((rest, kind.build(span, expr)))
   }
 
-  fn shell_expr(&self, input: &'a str, start: usize) -> Result<(&'a str, Span, ShellOrExecExpr), ParseErrorFailureError> {
+  fn shell_expr(&self, input: &'a str, start: usize) -> Result<(&'a str, Span, ShellOrExecExpr<'a>), ParseErrorFailureError> {
     let (rest, breakable) = self.any_breakable(input)?;
     let span = Span::new(start, breakable.span.end);
     Ok((rest, span, ShellOrExecExpr::Shell(breakable)))
   }
 
-  fn parse_arg(&self, input: &'a str, start: usize) -> PResult<'a, Instruction> {
+  fn parse_arg(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     let (after_name, name) = self.arg_name(input)?;
     let mut end = after_name;
     let mut value = None;
@@ -226,21 +224,21 @@ impl<'a> Parser<'a> {
     Ok((end, Instruction::Arg(ArgInstruction { span, name, value })))
   }
 
-  fn arg_name(&self, input: &'a str) -> PResult<'a, SpannedString> {
+  fn arg_name(&self, input: &'a str) -> PResult<'a, SpannedString<'a>> {
     // ASCII_ALPHA ~ (ASCII_ALPHANUMERIC | "_")*
     let name = substring(pair(
       if_true(next_char, |c| c.is_ascii_alphabetic()),
       skip_while(|c| c.is_ascii_alphanumeric() || c == '_'),
     ));
     match name(input) {
-      Ok((rest, text)) => Ok((rest, self.spanned(input, rest, text.to_string()))),
+      Ok((rest, text)) => Ok((rest, self.spanned(input, rest, text))),
       Err(_) => Err(fail("arg name is required")),
     }
   }
 
-  fn parse_copy(&self, input: &'a str, start: usize) -> PResult<'a, Instruction> {
+  fn parse_copy(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     let mut flags = Vec::new();
-    let mut paths: Vec<SpannedString> = Vec::new();
+    let mut paths: Vec<SpannedString<'a>> = Vec::new();
     let mut input = input;
 
     // (arg_ws ~ copy_flag)*
@@ -275,7 +273,7 @@ impl<'a> Parser<'a> {
     while let Some(after_ws) = self.arg_ws(input) {
       match self.any_whitespace(after_ws) {
         Ok((rest, text)) => {
-          paths.push(self.spanned(after_ws, rest, text.to_string()));
+          paths.push(self.spanned(after_ws, rest, text));
           input = rest;
         }
         Err(_) => break,
@@ -297,7 +295,7 @@ impl<'a> Parser<'a> {
     ))
   }
 
-  fn parse_label(&self, after_kw: &'a str, start: usize) -> PResult<'a, Instruction> {
+  fn parse_label(&self, after_kw: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     let mut labels = Vec::new();
     let input;
 
@@ -332,7 +330,7 @@ impl<'a> Parser<'a> {
 
   /// Parses the undocumented but supported space-separated single label form
   /// (`LABEL name value`). The span includes the leading argument whitespace.
-  fn label_single(&self, after_kw: &'a str) -> Option<(&'a str, Label)> {
+  fn label_single(&self, after_kw: &'a str) -> Option<(&'a str, Label<'a>)> {
     let input = self.arg_ws(after_kw)?;
     let (after_name, name) = self.label_name(input)?;
     // a single label is only valid when separated by whitespace (no `=`)
@@ -342,7 +340,7 @@ impl<'a> Parser<'a> {
     Some((rest, Label { span, name, value }))
   }
 
-  fn label_pair(&self, input: &'a str) -> Option<(&'a str, Label)> {
+  fn label_pair(&self, input: &'a str) -> Option<(&'a str, Label<'a>)> {
     let (after_name, name) = self.label_name(input)?;
     let after_eq = after_name.strip_prefix('=')?;
     let (rest, value) = self.label_value(after_eq)?;
@@ -352,24 +350,24 @@ impl<'a> Parser<'a> {
 
   /// A label name is either a quoted string or `any_equals` (text up to a
   /// space, newline or `=`).
-  fn label_name(&self, input: &'a str) -> Option<(&'a str, SpannedString)> {
+  fn label_name(&self, input: &'a str) -> Option<(&'a str, SpannedString<'a>)> {
     if starts_with_quote(input) {
       return self.parse_quoted_string(input).ok();
     }
     let any_equals = take_while(|c: char| !is_ws(c) && !is_newline_char(c) && c != '=');
     let (rest, text) = if_not_empty(any_equals)(input).ok()?;
-    Some((rest, self.spanned(input, rest, text.to_string())))
+    Some((rest, self.spanned(input, rest, text)))
   }
 
-  fn label_value(&self, input: &'a str) -> Option<(&'a str, SpannedString)> {
+  fn label_value(&self, input: &'a str) -> Option<(&'a str, SpannedString<'a>)> {
     if starts_with_quote(input) {
       return self.parse_quoted_string(input).ok();
     }
     let (rest, text) = self.any_whitespace(input).ok()?;
-    Some((rest, self.spanned(input, rest, text.to_string())))
+    Some((rest, self.spanned(input, rest, text)))
   }
 
-  fn parse_env(&self, after_kw: &'a str, start: usize) -> PResult<'a, Instruction> {
+  fn parse_env(&self, after_kw: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     if let Some((rest, var)) = self.env_single(after_kw) {
       let span = Span::new(start, var.span.end);
       return Ok((rest, Instruction::Env(EnvInstruction { span, vars: vec![var] })));
@@ -399,7 +397,7 @@ impl<'a> Parser<'a> {
 
   /// The space-separated single env form (`ENV name value`), where the value
   /// may be a breakable multi-line string.
-  fn env_single(&self, after_kw: &'a str) -> Option<(&'a str, EnvVar)> {
+  fn env_single(&self, after_kw: &'a str) -> Option<(&'a str, EnvVar<'a>)> {
     let input = self.arg_ws(after_kw)?;
     let (after_name, key) = self.env_name(input)?;
     // a single env is only valid when separated by whitespace (no `=`)
@@ -414,7 +412,7 @@ impl<'a> Parser<'a> {
     Some((rest, EnvVar { span, key, value }))
   }
 
-  fn env_pair(&self, input: &'a str) -> Option<(&'a str, EnvVar)> {
+  fn env_pair(&self, input: &'a str) -> Option<(&'a str, EnvVar<'a>)> {
     let (after_name, key) = self.env_name(input)?;
     let after_eq = after_name.strip_prefix('=')?;
     let (rest, value) = if starts_with_quote(after_eq) {
@@ -432,7 +430,7 @@ impl<'a> Parser<'a> {
   /// following character (e.g. `\ ` keeps a space in the value), per Docker's
   /// rules. The span covers the raw text; the content has escapes resolved so
   /// the formatter can re-quote values that contain spaces.
-  fn env_value(&self, input: &'a str) -> Option<(&'a str, SpannedString)> {
+  fn env_value(&self, input: &'a str) -> Option<(&'a str, SpannedString<'a>)> {
     let mut end = input.len();
     let mut chars = input.char_indices();
     while let Some((i, c)) = chars.next() {
@@ -463,13 +461,13 @@ impl<'a> Parser<'a> {
     ))
   }
 
-  fn env_name(&self, input: &'a str) -> Option<(&'a str, SpannedString)> {
+  fn env_name(&self, input: &'a str) -> Option<(&'a str, SpannedString<'a>)> {
     let name = take_while(|c: char| c.is_ascii_alphanumeric() || c == '_');
     let (rest, text) = if_not_empty(name)(input).ok()?;
-    Some((rest, self.spanned(input, rest, text.to_string())))
+    Some((rest, self.spanned(input, rest, text)))
   }
 
-  fn parse_onbuild(&self, input: &'a str, start: usize) -> PResult<'a, Instruction> {
+  fn parse_onbuild(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     let (rest, inner) = self.parse_instruction(input)?;
     let span = Span::new(start, inner.span().end);
     Ok((
@@ -481,7 +479,7 @@ impl<'a> Parser<'a> {
     ))
   }
 
-  fn parse_healthcheck(&self, input: &'a str, start: usize) -> PResult<'a, Instruction> {
+  fn parse_healthcheck(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     let mut flags = Vec::new();
     let mut input = input;
     // [OPTIONS] — the first arg_ws was consumed before the first token
@@ -517,13 +515,13 @@ impl<'a> Parser<'a> {
     ))
   }
 
-  fn parse_misc(&self, input: &'a str) -> PResult<'a, Instruction> {
+  fn parse_misc(&self, input: &'a str) -> PResult<'a, Instruction<'a>> {
     let start = self.off(input);
     let (after_kw, keyword) = alpha0(input);
     if keyword.is_empty() {
       return Err(fail("unexpected character"));
     }
-    let instruction = self.spanned(input, after_kw, keyword.to_string());
+    let instruction = self.spanned(input, after_kw, keyword);
     let (rest, arguments) = self.any_breakable(after_kw)?;
     let span = Span::new(start, arguments.span.end);
     Ok((rest, Instruction::Misc(MiscInstruction { span, instruction, arguments })))
@@ -534,26 +532,26 @@ impl<'a> Parser<'a> {
   /// Parses a `--name=value` flag whose name is ASCII-alphabetic (as in `FROM`
   /// and `COPY`). Returns `None` (a recoverable backtrace) if the input doesn't
   /// form a flag, so callers can treat it as another token.
-  fn parse_flag(&self, input: &'a str) -> Option<(&'a str, SpannedString, SpannedString, Span)> {
+  fn parse_flag(&self, input: &'a str) -> Option<(&'a str, SpannedString<'a>, SpannedString<'a>, Span)> {
     self.parse_flag_with(input, |c| c.is_ascii_alphabetic())
   }
 
   /// Like [`Parser::parse_flag`] but with a caller-supplied name character set
   /// (e.g. `HEALTHCHECK` flags such as `--start-period` allow dashes).
-  fn parse_flag_with(&self, input: &'a str, name_char: impl Fn(char) -> bool) -> Option<(&'a str, SpannedString, SpannedString, Span)> {
+  fn parse_flag_with(&self, input: &'a str, name_char: impl Fn(char) -> bool) -> Option<(&'a str, SpannedString<'a>, SpannedString<'a>, Span)> {
     let after_dashes = input.strip_prefix("--")?;
     let (after_name, name_text) = if_not_empty(take_while(name_char))(after_dashes).ok()?;
     let after_eq = after_name.strip_prefix('=')?;
     let (rest, value_text) = self.any_whitespace(after_eq).ok()?;
-    let name = self.spanned(after_dashes, after_name, name_text.to_string());
-    let value = self.spanned(after_eq, rest, value_text.to_string());
+    let name = self.spanned(after_dashes, after_name, name_text);
+    let value = self.spanned(after_eq, rest, value_text);
     let span = Span::new(self.off(input), self.off(rest));
     Some((rest, name, value, span))
   }
 
   /// Parses a quoted string, returning a span that includes the surrounding
   /// quotes and content with the quotes removed and escapes resolved.
-  fn parse_quoted_string(&self, input: &'a str) -> PResult<'a, SpannedString> {
+  fn parse_quoted_string(&self, input: &'a str) -> PResult<'a, SpannedString<'a>> {
     let quote = match input.chars().next() {
       Some(c @ ('"' | '\'' | '`')) => c,
       _ => return Err(fail("expected quoted string")),
@@ -581,7 +579,7 @@ impl<'a> Parser<'a> {
 
   /// Parses a string array (`[ "a", "b" ]`) with the relaxed whitespace and
   /// optional trailing comma the grammar allows.
-  fn string_array(&self, input: &'a str) -> PResult<'a, StringArray> {
+  fn string_array(&self, input: &'a str) -> PResult<'a, StringArray<'a>> {
     let start = input.strip_prefix('[').ok_or_else(|| fail("expected ["))?;
     let mut s = self.arg_ws_maybe(start);
     let mut elements = Vec::new();
@@ -628,8 +626,8 @@ impl<'a> Parser<'a> {
 
   /// Parses a breakable string: content split across lines by `\` line
   /// continuations and interspersed with comment lines.
-  fn any_breakable(&self, input: &'a str) -> PResult<'a, BreakableString> {
-    let mut components: Vec<BreakableStringComponent> = Vec::new();
+  fn any_breakable(&self, input: &'a str) -> PResult<'a, BreakableString<'a>> {
+    let mut components: Vec<BreakableStringComponent<'a>> = Vec::new();
     let mut s = input;
     loop {
       let after_ws = skip_ws(s);
@@ -642,10 +640,7 @@ impl<'a> Parser<'a> {
         };
         let content = &after_ws[..after_ws.len() - line_end.len()];
         let span = self.span(after_ws, line_end);
-        components.push(BreakableStringComponent::Comment(SpannedComment {
-          span,
-          content: content.to_string(),
-        }));
+        components.push(BreakableStringComponent::Comment(SpannedComment { span, content }));
         // comment_line ~ NEWLINE? — and a comment always continues the string
         s = strip_newline(line_end).unwrap_or(line_end);
         if s.is_empty() {
@@ -659,10 +654,7 @@ impl<'a> Parser<'a> {
         break;
       }
       let span = self.span(s, after_content);
-      components.push(BreakableStringComponent::String(SpannedString {
-        span,
-        content: content.to_string(),
-      }));
+      components.push(BreakableStringComponent::String(SpannedString { span, content: content.into() }));
       s = after_content;
       match line_continuation(s, self.escape) {
         Some(rest) => {
@@ -743,12 +735,12 @@ impl<'a> Parser<'a> {
     Ok((&input[end..], &input[..end]))
   }
 
-  fn value_quoted_or(&self, input: &'a str, fallback: impl Fn(&Self, &'a str) -> PResult<'a, &'a str>) -> PResult<'a, SpannedString> {
+  fn value_quoted_or(&self, input: &'a str, fallback: impl Fn(&Self, &'a str) -> PResult<'a, &'a str>) -> PResult<'a, SpannedString<'a>> {
     if starts_with_quote(input) {
       return self.parse_quoted_string(input);
     }
     let (rest, text) = fallback(self, input)?;
-    Ok((rest, self.spanned(input, rest, text.to_string())))
+    Ok((rest, self.spanned(input, rest, text)))
   }
 
   /// After an instruction, consumes trailing whitespace and a single line
@@ -777,7 +769,7 @@ impl<'a> Parser<'a> {
   /// Captures the current physical line verbatim (trailing whitespace trimmed)
   /// as a fallback for a line that couldn't be parsed, returning the input
   /// positioned after the line's newline.
-  fn unknown_line(&self, input: &'a str) -> (&'a str, SpannedString) {
+  fn unknown_line(&self, input: &'a str) -> (&'a str, SpannedString<'a>) {
     let line_end = match input.find(['\n', '\r']) {
       Some(i) => &input[i..],
       None => &input[input.len()..],
@@ -785,19 +777,13 @@ impl<'a> Parser<'a> {
     let content = input[..input.len() - line_end.len()].trim_end();
     let span = Span::new(self.off(input), self.off(input) + content.len());
     let rest = strip_newline(line_end).unwrap_or(line_end);
-    (
-      rest,
-      SpannedString {
-        span,
-        content: content.to_string(),
-      },
-    )
+    (rest, SpannedString { span, content: content.into() })
   }
 
   /// If the just-parsed instruction's first line declares heredocs, consume
   /// their bodies (verbatim) and wrap the instruction in a [`HeredocInstruction`].
   /// `rest` is positioned at the newline ending the instruction's first line.
-  fn maybe_consume_heredocs(&self, instruction: Instruction, rest: &'a str) -> (&'a str, Instruction) {
+  fn maybe_consume_heredocs(&self, instruction: Instruction<'a>, rest: &'a str) -> (&'a str, Instruction<'a>) {
     let first_line = &self.base[instruction.span().start..self.off(rest)];
     let delimiters = find_heredoc_delimiters(first_line);
     if delimiters.is_empty() {
@@ -812,7 +798,7 @@ impl<'a> Parser<'a> {
     let Some((after, body_end)) = self.consume_heredoc_bodies(body_start, &delimiters) else {
       return (rest, instruction);
     };
-    let body = self.base[self.off(body_start)..body_end].to_string();
+    let body = &self.base[self.off(body_start)..body_end];
     let span = Span::new(instruction.span().start, body_end);
     let instruction = Instruction::Heredoc(HeredocInstruction {
       span,
@@ -826,7 +812,7 @@ impl<'a> Parser<'a> {
   /// positioned at the newline after the final closing delimiter together with
   /// the byte offset where the body ends. Returns `None` if any heredoc reaches
   /// end-of-input without its closing delimiter.
-  fn consume_heredoc_bodies(&self, body_start: &'a str, delimiters: &[Heredoc]) -> Option<(&'a str, usize)> {
+  fn consume_heredoc_bodies(&self, body_start: &'a str, delimiters: &[Heredoc<'_>]) -> Option<(&'a str, usize)> {
     let mut cur = body_start;
     let mut final_rest = body_start;
     let mut end_off = self.off(body_start);
@@ -874,10 +860,10 @@ impl<'a> Parser<'a> {
     Span::new(self.off(from), self.off(to))
   }
 
-  fn spanned(&self, from: &'a str, to: &'a str, content: String) -> SpannedString {
+  fn spanned(&self, from: &'a str, to: &'a str, content: impl Into<Cow<'a, str>>) -> SpannedString<'a> {
     SpannedString {
       span: self.span(from, to),
-      content,
+      content: content.into(),
     }
   }
 }
@@ -892,7 +878,7 @@ enum ExprKind {
 }
 
 impl ExprKind {
-  fn build(self, span: Span, expr: ShellOrExecExpr) -> Instruction {
+  fn build<'a>(self, span: Span, expr: ShellOrExecExpr<'a>) -> Instruction<'a> {
     match self {
       ExprKind::Run => Instruction::Run(RunInstruction { span, expr }),
       ExprKind::Cmd => Instruction::Cmd(CmdInstruction { span, expr }),
@@ -903,14 +889,14 @@ impl ExprKind {
 }
 
 /// A heredoc declaration found on an instruction's first line.
-struct Heredoc {
+struct Heredoc<'a> {
   /// The delimiter word (without surrounding quotes).
-  word: String,
+  word: &'a str,
   /// `true` for the `<<-` form, where the closing delimiter may be tab-indented.
   strip_tabs: bool,
 }
 
-impl Heredoc {
+impl Heredoc<'_> {
   /// Whether `line` (already stripped of its line ending) closes this heredoc.
   fn matches(&self, line: &str) -> bool {
     if self.strip_tabs {
@@ -926,11 +912,11 @@ impl Heredoc {
 /// optional file descriptor, `<<` (or `<<-`), an optional quote, and a
 /// delimiter that starts with a letter or underscore (so shell bit-shifts like
 /// `$((1<<2))` are not mistaken for heredocs).
-fn find_heredoc_delimiters(first_line: &str) -> Vec<Heredoc> {
+fn find_heredoc_delimiters(first_line: &str) -> Vec<Heredoc<'_>> {
   first_line.split_whitespace().filter_map(parse_heredoc_token).collect()
 }
 
-fn parse_heredoc_token(token: &str) -> Option<Heredoc> {
+fn parse_heredoc_token(token: &str) -> Option<Heredoc<'_>> {
   let rest = token.trim_start_matches(|c: char| c.is_ascii_digit());
   let rest = rest.strip_prefix("<<")?;
   let (strip_tabs, rest) = match rest.strip_prefix('-') {
@@ -973,13 +959,10 @@ fn parse_heredoc_token(token: &str) -> Option<Heredoc> {
     }
   }
 
-  Some(Heredoc {
-    word: word.to_string(),
-    strip_tabs,
-  })
+  Some(Heredoc { word, strip_tabs })
 }
 
-fn breakable_from_string(s: SpannedString) -> BreakableString {
+fn breakable_from_string(s: SpannedString<'_>) -> BreakableString<'_> {
   BreakableString {
     span: s.span,
     components: vec![BreakableStringComponent::String(s)],
@@ -1084,8 +1067,12 @@ fn take_any_content(s: &str, escape: char) -> (&str, &str) {
 
 /// Resolves escapes in an unquoted value (e.g. `Rex\ The\ Dog` -> `Rex The
 /// Dog`): the escape character drops out and the following character is kept
-/// verbatim.
-fn unescape(s: &str, escape: char) -> String {
+/// verbatim. A value with nothing to resolve borrows from the input.
+fn unescape(s: &str, escape: char) -> Cow<'_, str> {
+  if !s.contains(escape) {
+    return Cow::Borrowed(s);
+  }
+
   let mut result = String::with_capacity(s.len());
   let mut chars = s.chars();
   while let Some(c) = chars.next() {
@@ -1098,17 +1085,21 @@ fn unescape(s: &str, escape: char) -> String {
       result.push(c);
     }
   }
-  result
+  Cow::Owned(result)
 }
 
 /// Removes the surrounding quotes from a quoted string and resolves escape
 /// sequences, mirroring the `enquote` crate closely enough for Dockerfiles. The
-/// caller guarantees `s` begins and ends with an ASCII quote character.
-fn unquote(s: &str) -> String {
+/// caller guarantees `s` begins and ends with an ASCII quote character. A
+/// string with no escape sequences borrows its content from the input.
+fn unquote(s: &str) -> Cow<'_, str> {
   if s.len() < 2 {
-    return String::new();
+    return Cow::Borrowed("");
   }
   let inner = &s[1..s.len() - 1]; // quotes are ASCII, so this is char-safe
+  if !inner.contains('\\') {
+    return Cow::Borrowed(inner);
+  }
 
   let mut result = String::with_capacity(inner.len());
   let mut iter = inner.chars();
@@ -1137,7 +1128,7 @@ fn unquote(s: &str) -> String {
       None => result.push('\\'),
     }
   }
-  result
+  Cow::Owned(result)
 }
 
 /// Reads `digits` hex characters and pushes the corresponding `char`. On any
@@ -1250,7 +1241,7 @@ mod test {
     let one = |s| {
       let d = find_heredoc_delimiters(s);
       assert_eq!(d.len(), 1, "{s:?}");
-      (d[0].word.clone(), d[0].strip_tabs)
+      (d[0].word.to_string(), d[0].strip_tabs)
     };
     assert_eq!(one("RUN <<EOF"), ("EOF".to_string(), false));
     assert_eq!(one("RUN <<-EOF"), ("EOF".to_string(), true));
