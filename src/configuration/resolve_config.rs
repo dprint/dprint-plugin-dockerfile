@@ -41,6 +41,13 @@ pub fn resolve_config(config: ConfigKeyMap, global_config: &GlobalConfiguration)
       &mut diagnostics,
     ),
     healthcheck_cmd_new_line: get_value(&mut config, "healthcheckCmdNewLine", false, &mut diagnostics),
+    indent_stages: get_value(&mut config, "indentStages", false, &mut diagnostics),
+    indent_width: get_value(
+      &mut config,
+      "indentWidth",
+      global_config.indent_width.unwrap_or(RECOMMENDED_GLOBAL_CONFIGURATION.indent_width),
+      &mut diagnostics,
+    ),
   };
 
   diagnostics.extend(get_unknown_property_diagnostics(config));

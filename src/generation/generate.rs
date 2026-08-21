@@ -12,24 +12,99 @@ pub fn generate(file: &Dockerfile, text: &str, config: &Configuration) -> PrintI
   let mut context = Context::new(text, file, config);
   let mut items = PrintItems::new();
   let top_level_nodes = context.gen_nodes_with_comments(0, text.len(), true, file.instructions.iter().map(|i| i.into()));
+  let is_stage_body = resolve_stage_bodies(&top_level_nodes, text, config);
 
   for (i, node) in top_level_nodes.iter().enumerate() {
+    // a continuation line keeps the indentation it had in the source, so strip
+    // the instruction's own indentation from it and let the printer add back
+    // the indentation of where the instruction now sits
+    context.dedent_width = if config.indent_stages {
+      line_indent_width(text, node.span().start)
+    } else {
+      0
+    };
     let node_items = gen_node(node.clone(), &mut context);
     // safety net: never drop a comment. some instructions discard comments that
     // follow a line continuation (the parser's arg_ws consumes them); recover
     // any that weren't emitted and place them just before the instruction.
-    items.extend(recover_dropped_comments(node, &mut context));
-    items.extend(node_items);
+    let mut instruction_items = recover_dropped_comments(node, &mut context);
+    instruction_items.extend(node_items);
+    if is_stage_body[i] {
+      instruction_items = ir_helpers::with_indent_times(instruction_items, stage_indent_width(config));
+    }
+    items.extend(instruction_items);
     items.push_signal(Signal::NewLine);
-    if let Some(next_node) = top_level_nodes.get(i + 1) {
-      let text_between = &text[node.span().end..next_node.span().start];
-      if text_between.chars().filter(|c| *c == '\n').count() > 1 {
-        items.push_signal(Signal::NewLine);
-      }
+    if let Some(next_node) = top_level_nodes.get(i + 1)
+      && has_blank_line_between(node, next_node, text)
+    {
+      items.push_signal(Signal::NewLine);
     }
   }
 
   items
+}
+
+/// Determines which top-level nodes make up the body of a build stage and so
+/// get indented when `indentStages` is enabled. That's everything following a
+/// `FROM` instruction except the comments directly above the next stage, which
+/// stay at the outer level with the `FROM` they document.
+fn resolve_stage_bodies(nodes: &[Node], text: &str, config: &Configuration) -> Vec<bool> {
+  let mut result = vec![false; nodes.len()];
+  if !config.indent_stages {
+    return result;
+  }
+
+  let mut is_in_stage = false;
+  for (i, node) in nodes.iter().enumerate() {
+    if matches!(node, Node::From(_)) {
+      is_in_stage = true;
+    } else {
+      result[i] = is_in_stage;
+    }
+  }
+
+  for i in 0..nodes.len() {
+    if matches!(nodes[i], Node::From(_)) {
+      for j in (0..i).rev() {
+        if !nodes[j].is_comment() || has_blank_line_between(&nodes[j], &nodes[j + 1], text) {
+          break;
+        }
+        result[j] = false;
+      }
+    }
+  }
+
+  result
+}
+
+fn has_blank_line_between(node: &Node, next_node: &Node, text: &str) -> bool {
+  let text_between = &text[node.span().end..next_node.span().start];
+  text_between.chars().filter(|c| *c == '\n').count() > 1
+}
+
+/// The number of spaces a stage's instructions are indented by. The printer
+/// counts indentation in levels of a single space (see the print options) and
+/// stores the level in a `u8`, so this is capped well below that limit to leave
+/// room for the alignment indentation used within an instruction.
+fn stage_indent_width(config: &Configuration) -> u32 {
+  const MAX: u32 = 200;
+  (config.indent_width as u32).min(MAX)
+}
+
+/// The width of the indentation of the line the given position is on.
+fn line_indent_width(text: &str, pos: usize) -> usize {
+  let line_start = text[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+  text[line_start..pos].chars().take_while(is_indent_char).count()
+}
+
+/// Removes up to `width` leading spaces or tabs.
+fn dedent(text: &str, width: usize) -> &str {
+  let count = text.chars().take(width).take_while(is_indent_char).count();
+  &text[count..]
+}
+
+fn is_indent_char(c: &char) -> bool {
+  matches!(*c, ' ' | '\t')
 }
 
 fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
@@ -357,7 +432,11 @@ fn gen_grouped_values(values: Vec<(PrintItems, usize)>, indent_width: u32, force
           // indent level: a level would also re-indent any newline inside the
           // value (e.g. a CMD that itself continues) on every format pass
           if i > 0 {
-            items.push_condition(conditions::if_true("continuationIndent", is_multiline.create_resolver(), gen_from_raw_string(&indent_text)));
+            items.push_condition(conditions::if_true(
+              "continuationIndent",
+              is_multiline.create_resolver(),
+              gen_from_raw_string(&indent_text),
+            ));
           }
           items.extend(value_items);
           if i < count - 1 {
@@ -461,7 +540,7 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
     // comments lose their leading whitespace when parsed, so align them
     // with the surrounding arguments by reusing their indentation
     if matches!(component, BreakableStringComponent::Comment(_)) {
-      let indentation = comment_indentation(&node.components, i);
+      let indentation = dedent(comment_indentation(&node.components, i), context.dedent_width);
       if !indentation.is_empty() {
         // via gen_from_raw_string so a tab indent becomes a Tab signal
         items.extend(gen_from_raw_string(indentation));
@@ -527,6 +606,13 @@ fn gen_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintIt
     true
   };
   let raw = context.span_text(&node.span);
+  // strip the instruction's source indentation from a continued line so that
+  // the printer re-indents it (whitespace within a quote is content, so keep it)
+  let raw = if should_trim || context.shell_quote.is_some() {
+    raw
+  } else {
+    dedent(raw, context.dedent_width)
+  };
 
   if context.collapse_shell_ws {
     // run the quote-aware collapse on the raw text so significant whitespace

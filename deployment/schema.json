@@ -39,6 +39,16 @@
       "description": "Whether to always break a HEALTHCHECK command onto its own continuation line when the instruction has options, even if it would fit on one line.",
       "default": false,
       "type": "boolean"
+    },
+    "indentStages": {
+      "description": "Whether to indent the instructions that follow a FROM instruction.",
+      "default": false,
+      "type": "boolean"
+    },
+    "indentWidth": {
+      "description": "The number of spaces used for a level of indentation.",
+      "default": 2,
+      "type": "number"
     }
   }
 }

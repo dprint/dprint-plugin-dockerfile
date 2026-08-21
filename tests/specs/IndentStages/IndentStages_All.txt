@@ -1,0 +1,159 @@
+~~ indentStages: true ~~
+== should indent the instructions in a stage ==
+FROM node AS base
+WORKDIR /app
+
+FROM base AS runner
+USER node
+EXPOSE 8000
+CMD ["node", "server.js"]
+
+[expect]
+FROM node AS base
+  WORKDIR /app
+
+FROM base AS runner
+  USER node
+  EXPOSE 8000
+  CMD ["node", "server.js"]
+
+== should keep the instructions before the first stage at the outer level ==
+# syntax=docker/dockerfile:1
+ARG NODE_VERSION=20
+
+FROM node:${NODE_VERSION}
+RUN echo hi
+
+[expect]
+# syntax=docker/dockerfile:1
+ARG NODE_VERSION=20
+
+FROM node:${NODE_VERSION}
+  RUN echo hi
+
+== should re-indent an over indented stage ==
+FROM node AS base
+        WORKDIR /app
+        RUN echo hi
+
+[expect]
+FROM node AS base
+  WORKDIR /app
+  RUN echo hi
+
+== should keep the relative indentation of continuation lines ==
+FROM alpine
+RUN foo \
+  bar \
+    baz
+
+[expect]
+FROM alpine
+  RUN foo \
+    bar \
+      baz
+
+== should keep the relative indentation of continuation lines when re-indenting ==
+FROM alpine
+    RUN foo \
+      bar \
+        baz
+    ENV A=1 \
+        B=2
+
+[expect]
+FROM alpine
+  RUN foo \
+    bar \
+      baz
+  ENV A=1 \
+      B=2
+
+== should indent a comment within a stage ==
+FROM alpine
+# a comment
+RUN echo hi
+# a trailing comment
+
+[expect]
+FROM alpine
+  # a comment
+  RUN echo hi
+  # a trailing comment
+
+== should keep a comment directly above a stage at the outer level ==
+FROM alpine AS build
+RUN echo hi
+
+# the runner stage
+# spanning two lines
+FROM alpine AS runner
+RUN echo bye
+
+[expect]
+FROM alpine AS build
+  RUN echo hi
+
+# the runner stage
+# spanning two lines
+FROM alpine AS runner
+  RUN echo bye
+
+== should indent a comment separated from the next stage by a blank line ==
+FROM alpine AS build
+RUN echo hi
+# a note about the build stage
+
+FROM alpine AS runner
+RUN echo bye
+
+[expect]
+FROM alpine AS build
+  RUN echo hi
+  # a note about the build stage
+
+FROM alpine AS runner
+  RUN echo bye
+
+== should indent a comment within a continued instruction ==
+FROM alpine
+RUN foo \
+  # a comment in the middle
+  bar
+
+[expect]
+FROM alpine
+  RUN foo \
+    # a comment in the middle
+    bar
+
+== should keep a heredoc body verbatim ==
+FROM alpine
+COPY <<CONF /app/config
+  indented line
+CONF
+RUN echo hi
+
+[expect]
+FROM alpine
+  COPY <<CONF /app/config
+  indented line
+CONF
+  RUN echo hi
+
+== should indent a continued HEALTHCHECK ==
+FROM alpine
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 CMD curl --fail --silent http://localhost:8080/healthz || exit 1
+
+[expect]
+FROM alpine
+  HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl --fail --silent http://localhost:8080/healthz || exit 1
+
+== should indent an ONBUILD instruction ==
+FROM alpine
+ONBUILD RUN echo hi
+
+[expect]
+FROM alpine
+  ONBUILD RUN echo hi

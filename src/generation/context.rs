@@ -22,6 +22,9 @@ pub struct Context<'a> {
   /// the quote currently open while collapsing shell whitespace (carried across
   /// the breakable string's components), or `None` when outside a quote
   pub shell_quote: Option<char>,
+  /// the amount of leading whitespace to strip from the continuation lines of
+  /// the current instruction so the printer can re-indent them
+  pub dedent_width: usize,
 }
 
 impl<'a> Context<'a> {
@@ -36,6 +39,7 @@ impl<'a> Context<'a> {
       gen_string_content: false,
       collapse_shell_ws: false,
       shell_quote: None,
+      dedent_width: 0,
     }
   }
 
