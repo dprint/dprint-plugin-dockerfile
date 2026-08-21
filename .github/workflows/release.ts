@@ -41,7 +41,7 @@ workflow({
         run: [
           `git config user.email "${actor}@users.noreply.github.com"`,
           `git config user.name "${actor}"`,
-          `deno run -A jsr:@dprint/automation@0.10.3/tasks/publish-release --${releaseKind}`,
+          `deno run -A jsr:@dprint/automation@0.12.2/tasks/publish-release --${releaseKind}`,
         ],
       },
     ],
