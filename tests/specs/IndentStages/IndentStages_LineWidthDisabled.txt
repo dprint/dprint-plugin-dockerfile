@@ -1,0 +1,8 @@
+~~ lineWidth: 50 ~~
+== should keep a label that fits without the stage indentation on one line ==
+FROM alpine
+LABEL a.label="value1" b.label2="value23456789012"
+
+[expect]
+FROM alpine
+LABEL a.label="value1" b.label2="value23456789012"

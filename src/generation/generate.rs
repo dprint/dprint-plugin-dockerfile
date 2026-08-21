@@ -12,24 +12,94 @@ pub fn generate(file: &Dockerfile, text: &str, config: &Configuration) -> PrintI
   let mut context = Context::new(text, file, config);
   let mut items = PrintItems::new();
   let top_level_nodes = context.gen_nodes_with_comments(0, text.len(), true, file.instructions.iter().map(|i| i.into()));
+  let is_stage_body = resolve_stage_bodies(&top_level_nodes, text, config);
+  let stage_indent_width = stage_indent_width(config);
 
   for (i, node) in top_level_nodes.iter().enumerate() {
+    // a continuation line keeps the indentation it had in the source, so when
+    // indenting stages moves the instruction, strip the instruction's own
+    // indentation from it and let the printer add back the indentation of
+    // where the instruction now sits
+    context.dedent_width = if config.indent_stages {
+      line_indent_width(text, node.span().start)
+    } else {
+      0
+    };
     let node_items = gen_node(node.clone(), &mut context);
     // safety net: never drop a comment. some instructions discard comments that
     // follow a line continuation (the parser's arg_ws consumes them); recover
     // any that weren't emitted and place them just before the instruction.
-    items.extend(recover_dropped_comments(node, &mut context));
-    items.extend(node_items);
+    let mut instruction_items = recover_dropped_comments(node, &mut context);
+    instruction_items.extend(node_items);
+    if is_stage_body[i] {
+      instruction_items = ir_helpers::with_indent_times(instruction_items, stage_indent_width);
+    }
+    items.extend(instruction_items);
     items.push_signal(Signal::NewLine);
-    if let Some(next_node) = top_level_nodes.get(i + 1) {
-      let text_between = &text[node.span().end..next_node.span().start];
-      if text_between.chars().filter(|c| *c == '\n').count() > 1 {
-        items.push_signal(Signal::NewLine);
-      }
+    if let Some(next_node) = top_level_nodes.get(i + 1)
+      && has_blank_line_between(node, next_node, text)
+    {
+      items.push_signal(Signal::NewLine);
     }
   }
 
   items
+}
+
+/// Determines which top-level nodes make up the body of a build stage and so
+/// get indented when `indentStages` is enabled. That's everything following a
+/// `FROM` instruction except the comments directly above the next stage, which
+/// stay at the outer level with the `FROM` they document.
+fn resolve_stage_bodies(nodes: &[Node], text: &str, config: &Configuration) -> Vec<bool> {
+  let mut is_stage_body = vec![false; nodes.len()];
+  if !config.indent_stages {
+    return is_stage_body;
+  }
+
+  // everything after a `FROM` belongs to that stage
+  let mut is_in_stage = false;
+  for (i, node) in nodes.iter().enumerate() {
+    if node.is_from() {
+      is_in_stage = true;
+    } else {
+      is_stage_body[i] = is_in_stage;
+    }
+  }
+
+  // ...except the run of comments written directly above the next `FROM`,
+  // which document it and stay at the outer level with it
+  for i in 0..nodes.len() {
+    if nodes[i].is_from() {
+      for j in (0..i).rev() {
+        if !nodes[j].is_comment() || has_blank_line_between(&nodes[j], &nodes[j + 1], text) {
+          break;
+        }
+        is_stage_body[j] = false;
+      }
+    }
+  }
+
+  is_stage_body
+}
+
+fn has_blank_line_between(node: &Node, next_node: &Node, text: &str) -> bool {
+  let text_between = &text[node.span().end..next_node.span().start];
+  text_between.chars().filter(|c| *c == '\n').count() > 1
+}
+
+/// The number of spaces a stage's instructions are indented by. The printer
+/// counts indentation in levels of a single space (see the print options) and
+/// stores the level in a `u8`, so this is capped well below that limit to leave
+/// room for the alignment indentation used within an instruction.
+fn stage_indent_width(config: &Configuration) -> u32 {
+  const MAX_LEVELS: u32 = 200;
+  (config.indent_width as u32).min(MAX_LEVELS)
+}
+
+/// The width of the indentation of the line the given position is on.
+fn line_indent_width(text: &str, pos: usize) -> usize {
+  let line_start = text[..pos].rfind('\n').map(|i| i + 1).unwrap_or(0);
+  text[line_start..pos].bytes().take_while(|b| matches!(b, b' ' | b'\t')).count()
 }
 
 fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems {
@@ -237,6 +307,7 @@ fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &m
             }),
             allow_inline_multi_line: false,
             allow_inline_single_line: false,
+            is_known_multi_line: false,
           }
         })
         .collect()
@@ -357,7 +428,11 @@ fn gen_grouped_values(values: Vec<(PrintItems, usize)>, indent_width: u32, force
           // indent level: a level would also re-indent any newline inside the
           // value (e.g. a CMD that itself continues) on every format pass
           if i > 0 {
-            items.push_condition(conditions::if_true("continuationIndent", is_multiline.create_resolver(), gen_from_raw_string(&indent_text)));
+            items.push_condition(conditions::if_true(
+              "continuationIndent",
+              is_multiline.create_resolver(),
+              gen_from_raw_string(&indent_text),
+            ));
           }
           items.extend(value_items);
           if i < count - 1 {
@@ -375,6 +450,7 @@ fn gen_grouped_values(values: Vec<(PrintItems, usize)>, indent_width: u32, force
             }),
             allow_inline_multi_line: false,
             allow_inline_single_line: false,
+            is_known_multi_line: false,
           }
         })
         .collect()
@@ -400,9 +476,14 @@ fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction, context: &mut Conte
   let mut items = PrintItems::new();
   // the first line is a normal instruction and is formatted as such
   items.extend(gen_node((&*node.instruction).into(), context));
-  // the heredoc body and its closing delimiter(s) are preserved verbatim
+  // the heredoc body and its closing delimiter(s) are preserved verbatim: the
+  // delimiter only closes the heredoc when it matches exactly, so the printer
+  // must never indent these lines (`gen_from_raw_string` only ignores the
+  // indentation itself when the text spans multiple lines)
   items.push_signal(Signal::NewLine);
+  items.push_signal(Signal::StartIgnoringIndent);
   items.extend(gen_from_raw_string(&node.body));
+  items.push_signal(Signal::FinishIgnoringIndent);
   items
 }
 
@@ -457,30 +538,45 @@ fn gen_breakable_string<'a>(node: &'a BreakableString, context: &mut Context<'a>
     items.push_sc(continuation);
     items.push_signal(Signal::NewLine);
   }
+  // a line continued within a quote is string content, so the printer must not
+  // indent it: that would change the value and, because the added indentation
+  // is content the next parse sees, grow it on every format
+  let mut is_ignoring_indent = false;
   for (i, component) in node.components.iter().enumerate() {
     // comments lose their leading whitespace when parsed, so align them
     // with the surrounding arguments by reusing their indentation
     if matches!(component, BreakableStringComponent::Comment(_)) {
-      let indentation = comment_indentation(&node.components, i);
+      let indentation = dedent(comment_indentation(&node.components, i), context.dedent_width);
       if !indentation.is_empty() {
         // via gen_from_raw_string so a tab indent becomes a Tab signal
         items.extend(gen_from_raw_string(indentation));
       }
     }
     items.extend(gen_node(component.into(), context));
+    let ends_in_quote = use_quotes || context.collapse_shell_ws && context.shell_quote.is_some();
+    if is_ignoring_indent && !ends_in_quote {
+      items.push_signal(Signal::FinishIgnoringIndent);
+      is_ignoring_indent = false;
+    }
     if i < node.components.len() - 1 {
       if let BreakableStringComponent::String(text) = component {
         // when the component ends inside a quote, any trailing whitespace is
         // part of the (kept) string content, so don't add a separator space
-        let ends_in_quote = context.collapse_shell_ws && context.shell_quote.is_some();
         if !use_quotes && !ends_in_quote && text.content.ends_with(" ") {
           items.push_sc(space_continuation);
         } else {
           items.push_sc(continuation);
         }
       }
+      if ends_in_quote && !is_ignoring_indent {
+        items.push_signal(Signal::StartIgnoringIndent);
+        is_ignoring_indent = true;
+      }
       items.push_signal(Signal::NewLine);
     }
+  }
+  if is_ignoring_indent {
+    items.push_signal(Signal::FinishIgnoringIndent);
   }
   if use_quotes {
     items.push_sc(sc!("\""));
@@ -509,6 +605,12 @@ fn string_leading_whitespace(component: &BreakableStringComponent) -> Option<&st
   }
 }
 
+/// Removes up to `width` leading spaces or tabs.
+fn dedent(text: &str, width: usize) -> &str {
+  let count = text.bytes().take(width).take_while(|b| matches!(b, b' ' | b'\t')).count();
+  &text[count..]
+}
+
 fn gen_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintItems {
   let mut items = PrintItems::new();
   if context.gen_string_content {
@@ -527,6 +629,13 @@ fn gen_string<'a>(node: &'a SpannedString, context: &mut Context<'a>) -> PrintIt
     true
   };
   let raw = context.span_text(&node.span);
+  // strip the instruction's source indentation from a continued line so that
+  // the printer re-indents it (whitespace within a quote is content, so keep it)
+  let raw = if should_trim || context.shell_quote.is_some() {
+    raw
+  } else {
+    dedent(raw, context.dedent_width)
+  };
 
   if context.collapse_shell_ws {
     // run the quote-aware collapse on the raw text so significant whitespace

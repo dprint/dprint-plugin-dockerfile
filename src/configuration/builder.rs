@@ -71,6 +71,21 @@ impl ConfigurationBuilder {
     self.insert("healthcheckCmdNewLine", value.into())
   }
 
+  /// Whether to indent the body of each build stage - the instructions and
+  /// comments that follow a `FROM` - by `indent_width` spaces. The indentation
+  /// is always spaces; `useTabs` is not honored.
+  /// Default: `false`
+  pub fn indent_stages(&mut self, value: bool) -> &mut Self {
+    self.insert("indentStages", value.into())
+  }
+
+  /// The number of spaces for an indent. Only used when `indent_stages` is
+  /// enabled.
+  /// Default: 2
+  pub fn indent_width(&mut self, value: u8) -> &mut Self {
+    self.insert("indentWidth", (value as i32).into())
+  }
+
   #[cfg(test)]
   pub(super) fn get_inner_config(&self) -> ConfigKeyMap {
     self.config.clone()
@@ -95,10 +110,12 @@ mod tests {
     config
       .new_line_kind(NewLineKind::CarriageReturnLineFeed)
       .line_width(90)
-      .healthcheck_cmd_new_line(true);
+      .healthcheck_cmd_new_line(true)
+      .indent_stages(true)
+      .indent_width(4);
 
     let inner_config = config.get_inner_config();
-    assert_eq!(inner_config.len(), 3);
+    assert_eq!(inner_config.len(), 5);
     let diagnostics = resolve_config(inner_config, &Default::default()).diagnostics;
     assert_eq!(diagnostics.len(), 0);
   }
@@ -108,12 +125,14 @@ mod tests {
     let mut global_config = ConfigKeyMap::new();
     global_config.insert(String::from("lineWidth"), 90.into());
     global_config.insert(String::from("newLineKind"), "crlf".into());
+    global_config.insert(String::from("indentWidth"), 4.into());
     global_config.insert(String::from("useTabs"), true.into());
     let global_config = resolve_global_config(&mut global_config).config;
     let mut config_builder = ConfigurationBuilder::new();
     let config = config_builder.global_config(global_config).build();
     assert_eq!(config.line_width, 90);
     assert_eq!(config.new_line_kind, NewLineKind::CarriageReturnLineFeed);
+    assert_eq!(config.indent_width, 4);
   }
 
   #[test]
@@ -122,5 +141,17 @@ mod tests {
     let mut config_builder = ConfigurationBuilder::new();
     let config = config_builder.global_config(global_config).build();
     assert_eq!(config.new_line_kind, NewLineKind::LineFeed);
+    assert_eq!(config.indent_width, 2);
+    assert!(!config.indent_stages);
+  }
+
+  #[test]
+  fn override_global_indent_width() {
+    let mut global_config = ConfigKeyMap::new();
+    global_config.insert(String::from("indentWidth"), 4.into());
+    let global_config = resolve_global_config(&mut global_config).config;
+    let mut config_builder = ConfigurationBuilder::new();
+    let config = config_builder.global_config(global_config).indent_width(8).build();
+    assert_eq!(config.indent_width, 8);
   }
 }

@@ -1,0 +1,16 @@
+~~ indentStages: true, indentWidth: 4 ~~
+== should indent stages by the indent width ==
+FROM node AS base
+WORKDIR /app
+
+FROM base AS runner
+RUN foo \
+  bar
+
+[expect]
+FROM node AS base
+    WORKDIR /app
+
+FROM base AS runner
+    RUN foo \
+      bar
