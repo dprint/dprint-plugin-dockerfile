@@ -1,0 +1,38 @@
+~~ indentWidth: 4 ~~
+== should ignore the indent width when stages are not indented ==
+FROM node AS base
+WORKDIR /app
+
+FROM base AS runner
+CMD ["node", "server.js"]
+
+[expect]
+FROM node AS base
+WORKDIR /app
+
+FROM base AS runner
+CMD ["node", "server.js"]
+
+== should strip the stage indentation by default ==
+FROM alpine
+  RUN echo hi
+  RUN foo \
+    bar
+
+[expect]
+FROM alpine
+RUN echo hi
+RUN foo \
+    bar
+
+== should keep the absolute indentation of a continuation line by default ==
+  RUN foo \
+        bar
+
+FROM alpine
+
+[expect]
+RUN foo \
+        bar
+
+FROM alpine

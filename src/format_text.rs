@@ -65,6 +65,43 @@ mod test {
   }
 
   #[test]
+  fn indents_stages_with_carriage_returns() {
+    // a `\r` is never part of the indentation and never reaches the dedent
+    let text = format_with(
+      "FROM alpine\r\n    RUN foo \\\r\n      bar\r\n",
+      crate::configuration::ConfigurationBuilder::new().indent_stages(true),
+    );
+    assert_eq!(text, "FROM alpine\n  RUN foo \\\n    bar\n");
+  }
+
+  #[test]
+  fn indent_width_of_zero_does_not_indent_stages() {
+    let text = format_with(
+      "FROM alpine\nRUN echo hi\n",
+      crate::configuration::ConfigurationBuilder::new().indent_stages(true).indent_width(0),
+    );
+    assert_eq!(text, "FROM alpine\nRUN echo hi\n");
+  }
+
+  #[test]
+  fn huge_indent_width_is_capped_instead_of_overflowing_the_printer() {
+    // the printer stores its indent level in a `u8`, so the width is capped
+    let text = format_with(
+      "FROM alpine\nENV A=1 \\\n  B=2\n",
+      crate::configuration::ConfigurationBuilder::new().indent_stages(true).indent_width(255),
+    );
+    let indent = " ".repeat(200);
+    assert_eq!(text, format!("FROM alpine\n{0}ENV A=1 \\\n{0}    B=2\n", indent));
+  }
+
+  /// Formats the text, resolving the "already formatted" result to the input.
+  fn format_with(text: &str, builder: &mut crate::configuration::ConfigurationBuilder) -> String {
+    format_text(&std::path::PathBuf::from("Dockerfile"), text, &builder.build())
+      .unwrap()
+      .unwrap_or_else(|| text.to_string())
+  }
+
+  #[test]
   fn comment_with_interior_tab_does_not_panic() {
     // a tab inside a comment must be emitted as a tab signal, not a raw tab
     // that the printer rejects

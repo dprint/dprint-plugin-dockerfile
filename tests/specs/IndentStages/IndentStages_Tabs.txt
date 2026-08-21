@@ -1,0 +1,32 @@
+~~ indentStages: true ~~
+== should re-indent a tab indented stage ==
+FROM alpine
+	RUN echo hi
+	RUN foo \
+		bar
+
+[expect]
+FROM alpine
+  RUN echo hi
+  RUN foo \
+  	bar
+
+== should keep a tab indented continuation line relative to its instruction ==
+FROM alpine
+RUN foo \
+	bar
+
+[expect]
+FROM alpine
+  RUN foo \
+  	bar
+
+== should count a tab as one column when the indentation is mixed ==
+FROM alpine
+    RUN foo \
+	bar
+
+[expect]
+FROM alpine
+  RUN foo \
+  bar

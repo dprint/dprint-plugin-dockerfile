@@ -1,0 +1,19 @@
+~~ indentStages: true, lineWidth: 50 ~~
+== should wrap a label that only fits without the stage indentation ==
+FROM alpine
+LABEL a.label="value1" b.label2="value23456789012"
+
+[expect]
+FROM alpine
+  LABEL a.label="value1" \
+        b.label2="value23456789012"
+
+== should align wrapped label values under the indentation ==
+FROM alpine
+LABEL multi.label="value1" multi.label2="value2" other="value3"
+
+[expect]
+FROM alpine
+  LABEL multi.label="value1" \
+        multi.label2="value2" \
+        other="value3"

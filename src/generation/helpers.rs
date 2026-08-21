@@ -79,6 +79,10 @@ impl<'a> Node<'a> {
   pub fn is_comment(&self) -> bool {
     matches!(self, Node::Comment(_) | Node::CommentRc(_))
   }
+
+  pub fn is_from(&self) -> bool {
+    matches!(self, Node::From(_))
+  }
 }
 
 pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment> {

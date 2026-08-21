@@ -1,0 +1,337 @@
+~~ indentStages: true ~~
+== should keep the comments before the first stage at the outer level ==
+# a comment about this file
+# spanning two lines
+
+# and another after a blank line
+FROM alpine
+RUN echo hi
+
+[expect]
+# a comment about this file
+# spanning two lines
+
+# and another after a blank line
+FROM alpine
+  RUN echo hi
+
+== should indent the comments in a stage ==
+FROM alpine
+# a comment before an instruction
+RUN echo hi
+# a comment after an instruction
+
+[expect]
+FROM alpine
+  # a comment before an instruction
+  RUN echo hi
+  # a comment after an instruction
+
+== should indent a comment at the end of the file after a blank line ==
+FROM alpine
+RUN echo hi
+
+# a final note
+
+[expect]
+FROM alpine
+  RUN echo hi
+
+  # a final note
+
+== should normalize the indentation of a comment in a stage ==
+FROM alpine
+        # an over indented comment
+RUN echo hi
+# an under indented comment
+RUN echo bye
+
+[expect]
+FROM alpine
+  # an over indented comment
+  RUN echo hi
+  # an under indented comment
+  RUN echo bye
+
+== should indent an empty comment and multiple comment chars in a stage ==
+FROM alpine
+#
+##weird   comment
+RUN echo hi
+
+[expect]
+FROM alpine
+  #
+  ## weird   comment
+  RUN echo hi
+
+== should un-indent an indented comment directly above a stage ==
+FROM alpine AS build
+RUN echo hi
+    # the runner stage
+FROM alpine AS runner
+RUN echo bye
+
+[expect]
+FROM alpine AS build
+  RUN echo hi
+# the runner stage
+FROM alpine AS runner
+  RUN echo bye
+
+== should keep only the attached comment block at the outer level ==
+FROM alpine AS build
+RUN echo hi
+# a note about the build stage
+
+# the runner stage
+FROM alpine AS runner
+RUN echo bye
+
+[expect]
+FROM alpine AS build
+  RUN echo hi
+  # a note about the build stage
+
+# the runner stage
+FROM alpine AS runner
+  RUN echo bye
+
+== should keep a comment between two stages at the outer level ==
+FROM alpine AS one
+# the second stage
+FROM alpine AS two
+RUN echo hi
+
+[expect]
+FROM alpine AS one
+# the second stage
+FROM alpine AS two
+  RUN echo hi
+
+== should indent a stage that only has comments ==
+FROM alpine AS one
+# nothing to do here
+
+FROM alpine AS two
+RUN echo hi
+
+[expect]
+FROM alpine AS one
+  # nothing to do here
+
+FROM alpine AS two
+  RUN echo hi
+
+== should keep run comments aligned with the arguments in a stage ==
+FROM alpine
+RUN example \
+    -something=example \
+    # some comment
+    -Test=534324 \
+    build
+
+[expect]
+FROM alpine
+  RUN example \
+      -something=example \
+      # some comment
+      -Test=534324 \
+      build
+
+== should keep run comments aligned when re-indenting a stage ==
+FROM alpine
+    RUN example \
+        -something=example \
+        # some comment
+        build
+
+[expect]
+FROM alpine
+  RUN example \
+      -something=example \
+      # some comment
+      build
+
+== should keep a trailing run comment aligned with the previous argument in a stage ==
+FROM alpine
+RUN echo foo \
+    bar \
+    # trailing comment
+
+[expect]
+FROM alpine
+  RUN echo foo \
+      bar \
+      # trailing comment
+
+== should keep run comments at the stage indentation when arguments are not indented ==
+FROM alpine
+RUN echo foo \
+# comment
+bar
+
+[expect]
+FROM alpine
+  RUN echo foo \
+  # comment
+  bar
+
+== should keep a comment immediately after a run line continuation in a stage ==
+FROM alpine
+RUN \
+# print hello world
+echo 'Hello World!'
+
+[expect]
+FROM alpine
+  RUN \
+  # print hello world
+  echo 'Hello World!'
+
+== should keep an indented comment immediately after a run line continuation in a stage ==
+FROM alpine
+RUN \
+    # note
+    echo hi
+
+[expect]
+FROM alpine
+  RUN \
+      # note
+      echo hi
+
+== should keep a comment between label pairs in a stage ==
+FROM alpine
+LABEL a=b \
+# label comment
+c=d
+
+[expect]
+FROM alpine
+  LABEL a=b \
+        # label comment
+        c=d
+
+== should keep a comment between env vars in a stage ==
+FROM alpine
+ENV MY_NAME="John Doe" \
+# testing
+    MY_DOG=RexTheDog
+
+[expect]
+FROM alpine
+  ENV MY_NAME="John Doe" \
+      # testing
+      MY_DOG=RexTheDog
+
+== should keep a comment in copy aligned with the arguments in a stage ==
+FROM alpine
+COPY a \
+# copy comment
+b
+
+[expect]
+FROM alpine
+  COPY a \
+       # copy comment
+       b
+
+== should recover a dropped comment in a stage ==
+FROM alpine
+ARG \
+# arg comment
+VERSION=1
+
+[expect]
+FROM alpine
+  # arg comment
+  ARG VERSION=1
+
+== should recover a dropped comment in a from at the outer level ==
+FROM \
+# base comment
+alpine
+RUN echo hi
+
+[expect]
+# base comment
+FROM alpine
+  RUN echo hi
+
+== should keep a comment in onbuild in a stage ==
+FROM alpine
+ONBUILD \
+# onbuild comment
+RUN echo hi
+
+[expect]
+FROM alpine
+  # onbuild comment
+  ONBUILD RUN echo hi
+
+== should keep a comment in healthcheck in a stage ==
+FROM alpine
+HEALTHCHECK --interval=30s \
+# healthcheck comment
+CMD curl
+
+[expect]
+FROM alpine
+  # healthcheck comment
+  HEALTHCHECK --interval=30s \
+    CMD curl
+
+== should not treat heredoc body comments as comments in a stage ==
+FROM alpine
+RUN <<EOF
+#!/bin/sh
+# a real script comment
+echo hi
+EOF
+
+[expect]
+FROM alpine
+  RUN <<EOF
+#!/bin/sh
+# a real script comment
+echo hi
+EOF
+
+== should keep everything at the outer level when there is no stage ==
+# a comment
+RUN echo hi
+# another comment
+
+RUN echo bye
+
+[expect]
+# a comment
+RUN echo hi
+# another comment
+
+RUN echo bye
+
+== should keep an escape directive at the outer level and align its comments ==
+# escape=`
+# a comment about this file
+FROM alpine
+RUN echo foo `
+    # some comment
+    bar
+
+[expect]
+# escape=`
+# a comment about this file
+FROM alpine
+  RUN echo foo `
+      # some comment
+      bar
+
+== should leave a file of only comments alone ==
+# just a comment
+# another
+
+[expect]
+# just a comment
+# another

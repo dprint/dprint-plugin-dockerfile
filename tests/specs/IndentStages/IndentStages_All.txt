@@ -157,3 +157,239 @@ ONBUILD RUN echo hi
 [expect]
 FROM alpine
   ONBUILD RUN echo hi
+
+== should keep a continuation line within a quote unchanged ==
+FROM alpine
+RUN echo "hello \
+    world"
+
+[expect]
+FROM alpine
+  RUN echo "hello \
+    world"
+
+== should keep a continuation line within a quote at column zero unchanged ==
+FROM alpine
+RUN echo "a \
+b"
+
+[expect]
+FROM alpine
+  RUN echo "a \
+b"
+
+== should keep a continuation line after an apostrophe unchanged ==
+FROM alpine
+RUN echo don't \
+  more
+
+[expect]
+FROM alpine
+  RUN echo don't \
+  more
+
+== should resume indenting after the quote closes ==
+FROM alpine
+RUN echo "a \
+  b" && echo c \
+  d
+
+[expect]
+FROM alpine
+  RUN echo "a \
+  b" && echo c \
+    d
+
+== should indent a continuation of a quote that opens and closes on one line ==
+FROM alpine
+    RUN echo "a  b" \
+      c
+
+[expect]
+FROM alpine
+  RUN echo "a  b" \
+    c
+
+== should not indent the terminator of an empty heredoc ==
+FROM alpine
+COPY <<EOF /app/empty.txt
+EOF
+RUN echo hi
+
+[expect]
+FROM alpine
+  COPY <<EOF /app/empty.txt
+EOF
+  RUN echo hi
+
+== should not indent anything when there is no stage ==
+RUN echo hi
+WORKDIR /app
+
+[expect]
+RUN echo hi
+WORKDIR /app
+
+== should not indent between consecutive stages ==
+FROM alpine AS a
+FROM alpine AS b
+RUN echo hi
+
+[expect]
+FROM alpine AS a
+FROM alpine AS b
+  RUN echo hi
+
+== should handle a stage with nothing after it ==
+FROM alpine AS base
+
+[expect]
+FROM alpine AS base
+
+== should not treat a heredoc body from as a stage ==
+FROM alpine
+RUN <<EOF
+FROM notreally
+RUN alsonot
+EOF
+RUN echo done
+
+[expect]
+FROM alpine
+  RUN <<EOF
+FROM notreally
+RUN alsonot
+EOF
+  RUN echo done
+
+== should indent an ARG that follows a stage ==
+FROM alpine AS build
+RUN echo hi
+
+ARG VERSION=1
+
+FROM alpine AS runner
+RUN echo $VERSION
+
+[expect]
+FROM alpine AS build
+  RUN echo hi
+
+  ARG VERSION=1
+
+FROM alpine AS runner
+  RUN echo $VERSION
+
+== should keep a heredoc verbatim when it ends a stage ==
+FROM alpine AS build
+RUN <<EOF
+echo hi
+EOF
+
+FROM alpine AS runner
+RUN echo bye
+
+[expect]
+FROM alpine AS build
+  RUN <<EOF
+echo hi
+EOF
+
+FROM alpine AS runner
+  RUN echo bye
+
+== should re-indent an over indented heredoc instruction ==
+FROM alpine
+    COPY <<CONF /app/config
+  indented body line
+CONF
+    RUN echo hi
+
+[expect]
+FROM alpine
+  COPY <<CONF /app/config
+  indented body line
+CONF
+  RUN echo hi
+
+== should indent an ONBUILD with a multi-line nested instruction ==
+FROM alpine
+ONBUILD COPY foo \
+    # a comment
+    bar dest/
+
+[expect]
+FROM alpine
+  ONBUILD COPY foo \
+       # a comment
+       bar \
+       dest/
+
+== should indent under a backtick escape directive ==
+# escape=`
+FROM alpine
+RUN powershell -Command `
+    Write-Host hi
+
+[expect]
+# escape=`
+FROM alpine
+  RUN powershell -Command `
+      Write-Host hi
+
+== should re-indent an over indented backtick continuation ==
+# escape=`
+FROM alpine
+    RUN a `
+        b
+
+[expect]
+# escape=`
+FROM alpine
+  RUN a `
+      b
+
+== should keep the continuation of a quoted value where the author put it ==
+FROM alpine
+    LABEL a="x \
+       y"
+
+[expect]
+FROM alpine
+  LABEL a="x \
+       y"
+
+== should keep a continuation within a nested healthcheck command at its own indentation ==
+FROM alpine
+HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 CMD curl --fail --silent http://x/y \
+|| exit 1
+
+[expect]
+FROM alpine
+  HEALTHCHECK --interval=30s --timeout=3s --start-period=40s --retries=3 \
+    CMD curl --fail --silent http://x/y \
+  || exit 1
+
+== should indent a whitespace only continuation line ==
+FROM alpine
+RUN foo \
+   \
+   bar
+
+[expect]
+FROM alpine
+  RUN foo \
+   \
+     bar
+
+== should dedent a continuation before the first stage ==
+  RUN foo \
+        bar
+
+FROM alpine
+
+[expect]
+RUN foo \
+      bar
+
+FROM alpine

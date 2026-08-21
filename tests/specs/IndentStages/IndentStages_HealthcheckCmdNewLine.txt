@@ -1,0 +1,18 @@
+~~ indentStages: true, healthcheckCmdNewLine: true ~~
+== should indent both the instruction and the command it forces onto its own line ==
+FROM alpine
+HEALTHCHECK --interval=30s CMD curl -f http://localhost/
+
+[expect]
+FROM alpine
+  HEALTHCHECK --interval=30s \
+    CMD curl -f http://localhost/
+
+== should collapse a continuation before NONE ==
+FROM alpine
+HEALTHCHECK --interval=30s \
+  NONE
+
+[expect]
+FROM alpine
+  HEALTHCHECK --interval=30s NONE
