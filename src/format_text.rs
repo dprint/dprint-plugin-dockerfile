@@ -29,7 +29,7 @@ pub fn trace_file(_file_path: &Path, text: &str, config: &Configuration) -> dpri
   dprint_core::formatting::trace_printing(|| generate(&node, text, config), config_to_print_options(text, config))
 }
 
-fn parse_node(text: &str) -> Result<Dockerfile, FormatError> {
+fn parse_node(text: &str) -> Result<Dockerfile<'_>, FormatError> {
   Ok(Dockerfile::parse(text)?)
 }
 
