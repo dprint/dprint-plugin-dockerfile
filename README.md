@@ -12,8 +12,6 @@ Then in your project's directory with a dprint.json file, run:
 
 ```shellsession
 dprint add dockerfile
-# or install from npm
-dprint add npm:@dprint/dockerfile
 ```
 
 See https://dprint.dev/plugins/dockerfile/ for more information.
