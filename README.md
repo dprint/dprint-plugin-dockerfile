@@ -1,6 +1,6 @@
 # dprint-plugin-dockerfile
 
-[![](https://img.shields.io/crates/v/dprint-plugin-dockerfile.svg)](https://crates.io/crates/dprint-plugin-dockerfile) [![CI](https://github.com/dprint/dprint-plugin-dockerfile/workflows/CI/badge.svg)](https://github.com/dprint/dprint-plugin-dockerfile/actions?query=workflow%3ACI)
+[![](https://img.shields.io/crates/v/dprint-plugin-dockerfile.svg)](https://crates.io/crates/dprint-plugin-dockerfile) [![npm version](https://img.shields.io/npm/v/@dprint/dockerfile.svg)](https://www.npmjs.com/package/@dprint/dockerfile) [![CI](https://github.com/dprint/dprint-plugin-dockerfile/workflows/CI/badge.svg)](https://github.com/dprint/dprint-plugin-dockerfile/actions?query=workflow%3ACI)
 
 Dockerfile code formatter plugin for [dprint](https://dprint.dev).
 
