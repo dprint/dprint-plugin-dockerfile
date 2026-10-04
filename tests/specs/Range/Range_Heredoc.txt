@@ -1,0 +1,259 @@
+== should keep the heredoc body of a touched instruction ==
+WORKDIR   /before
+RUN   [|<<EOF|]
+  echo   hi
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN <<EOF
+  echo   hi
+EOF|]
+WORKDIR   /after
+
+== should format the instruction when its heredoc body is touched ==
+WORKDIR   /before
+RUN   <<EOF
+  echo   [|hi|]
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN <<EOF
+  echo   hi
+EOF|]
+WORKDIR   /after
+
+== should format the instruction when its heredoc delimiter is touched ==
+WORKDIR   /before
+RUN   <<EOF
+  echo   hi
+EO[||]F
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN <<EOF
+  echo   hi
+EOF
+WORKDIR   /after
+
+== should format the instruction when a blank line of its heredoc body is touched ==
+WORKDIR   /before
+RUN   <<EOF
+echo   one
+[||]
+echo   two
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN <<EOF
+echo   one
+
+echo   two
+EOF
+WORKDIR   /after
+
+== should not format an instruction after a touched heredoc ==
+WORKDIR   /before
+RUN   <<EOF
+echo   [|hi|]
+EOF
+RUN   echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN <<EOF
+echo   hi
+EOF|]
+RUN   echo   hi
+WORKDIR   /after
+
+== should not format a heredoc before a touched instruction ==
+WORKDIR   /before
+RUN   <<EOF
+echo   hi
+EOF
+RUN   echo   [|hi|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN   <<EOF
+echo   hi
+EOF
+[|RUN echo hi|]
+WORKDIR   /after
+
+== should format a touched copy instruction with a heredoc ==
+WORKDIR   /before
+COPY   [|<<EOF|]   /app/hello.txt
+Hello   World
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|COPY <<EOF /app/hello.txt
+Hello   World
+EOF|]
+WORKDIR   /after
+
+== should format a touched instruction with multiple heredocs ==
+WORKDIR   /before
+RUN   <<EOF1   <<EOF2
+one   1
+EOF1
+two   [|2|]
+EOF2
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN <<EOF1 <<EOF2
+one   1
+EOF1
+two   2
+EOF2|]
+WORKDIR   /after
+
+== should not treat the comment lines of a touched heredoc body as comments ==
+WORKDIR   /before
+RUN   <<EOF
+#!/bin/sh
+#a   real   script   comm[||]ent
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN <<EOF
+#!/bin/sh
+#a   real   script   comment
+EOF
+WORKDIR   /after
+
+== should format a touched instruction with a quoted heredoc delimiter ==
+WORKDIR   /before
+RUN   <<'EOF'
+$keep   [|$literal|]
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN <<'EOF'
+$keep   $literal
+EOF|]
+WORKDIR   /after
+
+== should format a touched heredoc nested in an onbuild instruction ==
+WORKDIR   /before
+ONBUILD   RUN   <<EOF
+echo   [|hi|]
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD RUN <<EOF
+echo   hi
+EOF|]
+WORKDIR   /after
+
+== should format a touched copy heredoc nested in an onbuild instruction ==
+WORKDIR   /before
+onbuild   copy   [|<<EOF|]   /app/hello.txt
+Hello   World
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD COPY <<EOF /app/hello.txt
+Hello   World
+EOF|]
+WORKDIR   /after
+
+== should keep the tabs of a touched heredoc that strips them ==
+WORKDIR   /before
+RUN   <<-EOF
+	echo   [|hi|]
+	EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN <<-EOF
+	echo   hi
+	EOF|]
+WORKDIR   /after
+
+== should format a touched instruction with an empty heredoc ==
+WORKDIR   /before
+RUN   <<EOF
+EO[||]F
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN <<EOF
+EOF
+WORKDIR   /after
+
+== should format the command around the heredoc of a touched instruction ==
+WORKDIR   /before
+RUN   python3   <<EOF   &&   echo   done
+print(  [|1|]  )
+EOF
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN python3 <<EOF && echo done
+print(  1  )
+EOF|]
+WORKDIR   /after
+
+== should format a touched heredoc along with the instruction after it ==
+WORKDIR   /before
+RUN   <<EOF
+echo   [|hi
+EOF
+RUN   echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN <<EOF
+echo   hi
+EOF
+RUN echo hi|]
+WORKDIR   /after
+
+== should only format the touched line of a heredoc that isn't terminated ==
+WORKDIR   /before
+RUN   <<EOF
+echo   [|hi|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN   <<EOF
+[|echo hi|]
+WORKDIR   /after
+
+== should not treat a bit shift in a touched instruction as a heredoc ==
+WORKDIR   /before
+RUN   echo   $((1<<[|2|]))
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo $((1<<2))|]
+WORKDIR   /after

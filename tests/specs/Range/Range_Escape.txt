@@ -1,0 +1,100 @@
+== should use the escape character of the file in a touched run instruction ==
+# escape=`
+WORKDIR   /before
+RUN   powershell   -Command   `
+    [|Write-Host|]   hi
+WORKDIR   /after
+
+[expect]
+# escape=`
+WORKDIR   /before
+[|RUN powershell -Command `
+    Write-Host hi|]
+WORKDIR   /after
+
+== should use the escape character of the file in a touched env instruction ==
+# escape=`
+WORKDIR   /before
+ENV   A=1   `
+  [|B=2|]   C=3
+WORKDIR   /after
+
+[expect]
+# escape=`
+WORKDIR   /before
+[|ENV A=1 `
+    B=2 `
+    C=3|]
+WORKDIR   /after
+
+== should use the escape character of the file in a touched healthcheck instruction ==
+# escape=`
+WORKDIR   /before
+HEALTHCHECK   --interval=5m   `
+      CMD   [|curl|]
+WORKDIR   /after
+
+[expect]
+# escape=`
+WORKDIR   /before
+[|HEALTHCHECK --interval=5m `
+  CMD curl|]
+WORKDIR   /after
+
+== should keep a trailing backslash in a touched run instruction ==
+# escape=`
+WORKDIR   /before
+RUN   [|dir|]   c:\
+WORKDIR   /after
+
+[expect]
+# escape=`
+WORKDIR   /before
+[|RUN dir c:\|]
+WORKDIR   /after
+
+== should not change a touched escape directive ==
+#[| escape=`|]
+WORKDIR   /after
+
+[expect]
+#[| escape=`|]
+WORKDIR   /after
+
+== should format the whole file when touching the escape directive and the last instruction ==
+#[| escape=`
+RUN   a   `
+    b|]
+
+[expect]
+# escape=`
+RUN a `
+    b
+
+== should use the escape character of a file with a syntax directive ==
+# syntax=docker/dockerfile:1
+# escape=`
+WORKDIR   /before
+RUN   a   `
+    [|b|]
+WORKDIR   /after
+
+[expect]
+# syntax=docker/dockerfile:1
+# escape=`
+WORKDIR   /before
+[|RUN a `
+    b|]
+WORKDIR   /after
+
+== should only format a touched escape directive ==
+#escape=[||]`
+RUN   a   `
+    b
+WORKDIR   /after
+
+[expect]
+# escape=`
+RUN   a   `
+    b
+WORKDIR   /after

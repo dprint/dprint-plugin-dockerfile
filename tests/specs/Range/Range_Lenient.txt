@@ -1,0 +1,59 @@
+== should keep a touched line that can't be parsed ==
+WORKDIR   /before
+[|USER|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|USER|]
+WORKDIR   /after
+
+== should trim a touched line that can't be parsed ==
+WORKDIR   /before
+    123   [|abc|]   
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|123   abc|]
+WORKDIR   /after
+
+== should format the instruction around the lines that can't be parsed ==
+WORKDIR   /before
+COPY a
+RUN   echo   [|hi|]
+FROM x y
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+COPY a
+[|RUN echo hi|]
+FROM x y
+WORKDIR   /after
+
+== should format a touched instruction along with a line that can't be parsed ==
+WORKDIR   /before
+LAB[|EL
+RUN   echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|LABEL
+RUN echo hi|]
+WORKDIR   /after
+
+== should not trim the lines that can't be parsed around a touched instruction ==
+WORKDIR   /before
+  COPY a
+RUN   echo   [|hi|]
+  FROM x y
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+  COPY a
+[|RUN echo hi|]
+  FROM x y
+WORKDIR   /after

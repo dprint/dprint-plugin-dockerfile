@@ -29,15 +29,15 @@ pub fn trace_file(_file_path: &Path, text: &str, config: &Configuration) -> dpri
   dprint_core::formatting::trace_printing(|| generate(&node, text, config), config_to_print_options(text, config))
 }
 
-fn parse_node(text: &str) -> Result<Dockerfile<'_>, FormatError> {
+pub(crate) fn parse_node(text: &str) -> Result<Dockerfile<'_>, FormatError> {
   Ok(Dockerfile::parse(text)?)
 }
 
-fn strip_bom(text: &str) -> &str {
+pub(crate) fn strip_bom(text: &str) -> &str {
   text.strip_prefix("\u{FEFF}").unwrap_or(text)
 }
 
-fn config_to_print_options(text: &str, config: &Configuration) -> PrintOptions {
+pub(crate) fn config_to_print_options(text: &str, config: &Configuration) -> PrintOptions {
   PrintOptions {
     indent_width: 1,
     max_width: config.line_width,

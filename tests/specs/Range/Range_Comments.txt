@@ -1,0 +1,289 @@
+== should format a touched comment ==
+WORKDIR   /before
+#[|comment|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|# comment|]
+WORKDIR   /after
+
+== should format a touched comment with leading whitespace ==
+WORKDIR   /before
+    #   comm[||]ent
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+# comment
+WORKDIR   /after
+
+== should format a touched empty comment ==
+WORKDIR   /before
+  #[||]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+#
+WORKDIR   /after
+
+== should format a touched comment with multiple comment chars ==
+WORKDIR   /before
+###comm[||]ent
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+### comment
+WORKDIR   /after
+
+== should format several touched comments ==
+WORKDIR   /before
+#[|one
+
+
+  #two|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|# one
+
+# two|]
+WORKDIR   /after
+
+== should format a touched comment along with a touched instruction ==
+WORKDIR   /before
+#[|comment
+RUN|]   echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|# comment
+RUN echo hi|]
+WORKDIR   /after
+
+== should not format the comments around a touched instruction ==
+WORKDIR   /before
+#before
+RUN   echo   [|hi|]
+#after
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+#before
+[|RUN echo hi|]
+#after
+WORKDIR   /after
+
+== should not format the instructions around a touched comment ==
+WORKDIR   /before
+RUN   echo   one
+#comm[||]ent
+RUN   echo   two
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN   echo   one
+# comment
+RUN   echo   two
+WORKDIR   /after
+
+== should format the comments within a touched run instruction ==
+WORKDIR   /before
+RUN   echo   [|foo|]   \
+    #comment
+    bar
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo foo \
+    # comment
+    bar|]
+WORKDIR   /after
+
+== should format the instruction when a comment within it is touched ==
+WORKDIR   /before
+RUN   echo   foo   \
+    #comm[||]ent
+    bar
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN echo foo \
+    # comment
+    bar
+WORKDIR   /after
+
+== should format the instruction when a comment at the end of it is touched ==
+WORKDIR   /before
+RUN   echo   foo   \
+    bar   \
+    #comm[||]ent
+
+[expect]
+WORKDIR   /before
+RUN echo foo \
+    bar \
+    # comment
+
+== should format the instruction when a comment right after its line continuation is touched ==
+WORKDIR   /before
+RUN   \
+#comm[||]ent
+echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN \
+# comment
+echo hi
+WORKDIR   /after
+
+== should move a comment out of a touched arg instruction ==
+WORKDIR   /before
+ARG   \
+#arg comment
+[|VERSION|]=1
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|# arg comment
+ARG VERSION=1|]
+WORKDIR   /after
+
+== should move the comments out of a touched from instruction ==
+WORKDIR   /before
+FROM   \
+#base comment
+--platform=linux/amd64   \
+#platform comm[||]ent
+alpine
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+# base comment
+# platform comment
+FROM --platform=linux/amd64 alpine
+WORKDIR   /after
+
+== should only format the comment above an instruction when it's the one touched ==
+WORKDIR   /before
+#[|arg comment|]
+ARG   VERSION=1
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|# arg comment|]
+ARG   VERSION=1
+WORKDIR   /after
+
+== should format a touched comment at the end of the file ==
+RUN   echo   hi
+#comm[||]ent
+
+
+
+[expect]
+RUN   echo   hi
+# comment
+
+
+
+== should format a touched comment at the start of the file ==
+
+#comm[||]ent
+RUN   echo   hi
+
+[expect]
+
+# comment
+RUN   echo   hi
+
+== should format the whole file when touching its only comment ==
+
+#comm[||]ent
+
+
+
+[expect]
+# comment
+
+== should format the comment following a touched instruction on its last line ==
+WORKDIR   /before
+FROM   [|alpine|]   \
+  AS   build   #comment
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|FROM alpine AS build
+# comment|]
+WORKDIR   /after
+
+== should format the instruction when the comment following it on its line is touched ==
+WORKDIR   /before
+ARG   VERSION=1   #comm[||]ent
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+ARG VERSION=1
+# comment
+WORKDIR   /after
+
+== should format the comment following a touched exec form instruction ==
+WORKDIR   /before
+CMD   [ [|"a"|], \
+  "b" ]   #comment
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|CMD ["a", "b"]
+# comment|]
+WORKDIR   /after
+
+== should format the comments following each of the touched instructions ==
+WORKDIR   /before
+FROM   al[|pine   #one
+HEALTHCHECK   NO|]NE   #two
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|FROM alpine
+# one
+HEALTHCHECK NONE
+# two|]
+WORKDIR   /after
+
+== should keep a hash following a touched run instruction as part of the command ==
+WORKDIR   /before
+RUN   echo   [|hi|]   #not a comment
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi #not a comment|]
+WORKDIR   /after
+
+== should keep a tab in a touched comment ==
+WORKDIR   /before
+#a	comm[||]ent
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+# a	comment
+WORKDIR   /after

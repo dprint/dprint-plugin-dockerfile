@@ -85,6 +85,34 @@ impl Node<'_> {
   }
 }
 
+/// Interleaves the given nodes with the comments found in the text between
+/// them. When `include_leading` is false, comments appearing before the first
+/// node are skipped so they don't end up on the instruction's prefix line; the
+/// formatter's safety net recovers those onto their own lines instead. The
+/// top-level call uses `true` so file-leading comments are kept.
+pub fn nodes_with_comments<'a>(text: &'a str, start_pos: usize, end_pos: usize, include_leading: bool, nodes: impl Iterator<Item = Node<'a>>) -> Vec<Node<'a>> {
+  let mut result = Vec::new();
+  let mut last_pos = start_pos;
+  let mut is_first = true;
+  for node in nodes {
+    if !is_first || include_leading {
+      let text = &text[last_pos..node.span().start];
+      for comment in parse_comments(text, last_pos) {
+        result.push(Node::CommentRc(Rc::new(comment)));
+      }
+    }
+    let node_end = node.span().end;
+    result.push(node);
+    last_pos = node_end;
+    is_first = false;
+  }
+  let text = &text[last_pos..end_pos];
+  for comment in parse_comments(text, last_pos) {
+    result.push(Node::CommentRc(Rc::new(comment)));
+  }
+  result
+}
+
 pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment<'_>> {
   let mut comments = Vec::new();
   let mut char_iterator = text.char_indices();

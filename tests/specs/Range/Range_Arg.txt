@@ -1,0 +1,51 @@
+== should format a touched arg instruction ==
+WORKDIR   /before
+ARG   [|VERSION|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ARG VERSION|]
+WORKDIR   /after
+
+== should format a touched arg instruction with a value ==
+WORKDIR   /before
+arg   VERSION=[|1|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ARG VERSION=1|]
+WORKDIR   /after
+
+== should format a touched arg instruction with a quoted value ==
+WORKDIR   /before
+ARG   NAME="some   [|value|]"   
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ARG NAME="some   value"|]
+WORKDIR   /after
+
+== should drop a dangling line continuation of a touched arg instruction ==
+WORKDIR   /before
+ARG   VERSION=[|1|]   \
+
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ARG VERSION=1|]
+
+WORKDIR   /after
+
+== should format a touched arg instruction with a single quoted value ==
+WORKDIR   /before
+ARG   NAME='some   [|value|]'
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ARG NAME='some   value'|]
+WORKDIR   /after

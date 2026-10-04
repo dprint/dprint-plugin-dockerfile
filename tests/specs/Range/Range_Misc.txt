@@ -1,0 +1,95 @@
+== should format a touched expose instruction ==
+WORKDIR   /before
+EXPOSE   [|80/udp|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|EXPOSE 80/udp|]
+WORKDIR   /after
+
+== should format a touched maintainer instruction ==
+WORKDIR   /before
+MAINTAINER  [|test|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|MAINTAINER test|]
+WORKDIR   /after
+
+== should keep the case of a touched user instruction ==
+WORKDIR   /before
+user  [|test|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|user test|]
+WORKDIR   /after
+
+== should format a touched volume instruction ==
+WORKDIR   /before
+VOLUME   /var/log   [|/var/db|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|VOLUME /var/log   /var/db|]
+WORKDIR   /after
+
+== should format a touched workdir instruction ==
+WORKDIR   /before
+WORKDIR   [|/a|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|WORKDIR /a|]
+WORKDIR   /after
+
+== should format a touched stopsignal instruction ==
+WORKDIR   /before
+STOPSIGNAL  [|SIGKILL|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|STOPSIGNAL SIGKILL|]
+WORKDIR   /after
+
+== should format a touched add instruction ==
+WORKDIR   /before
+ADD   [|.|]   /app/src
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ADD .   /app/src|]
+WORKDIR   /after
+
+== should format a touched misc instruction spanning lines ==
+WORKDIR   /before
+EXPOSE   80   \
+    [|443|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|EXPOSE 80 \
+    443|]
+WORKDIR   /after
+
+== should keep a comment in a touched misc instruction ==
+WORKDIR   /before
+EXPOSE   80   \
+#comm[||]ent
+    443
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+EXPOSE 80 \
+    # comment
+    443
+WORKDIR   /after

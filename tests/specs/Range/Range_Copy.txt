@@ -1,0 +1,74 @@
+== should format a touched copy instruction ==
+WORKDIR   /before
+COPY   source1   [|source2|]   destination/
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|COPY source1 source2 destination/|]
+WORKDIR   /after
+
+== should format a touched copy instruction with flags ==
+WORKDIR   /before
+copy   --chown=user:group   --from=[|test|]   source   destination/
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|COPY --chown=user:group --from=test source destination/|]
+WORKDIR   /after
+
+== should format a touched exec form copy instruction ==
+WORKDIR   /before
+COPY   --chown=user:group   [  "a.txt"  ,  [|"./"|]  ]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|COPY --chown=user:group ["a.txt", "./"]|]
+WORKDIR   /after
+
+== should collapse a touched copy instruction spanning lines ==
+WORKDIR   /before
+COPY   foo   \
+    [|bar|]   /dest
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|COPY foo bar /dest|]
+WORKDIR   /after
+
+== should keep a comment in a touched copy instruction ==
+WORKDIR   /before
+COPY   foo   \
+    #a comment
+    [|bar|]   /dest
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|COPY foo \
+     # a comment
+     bar \
+     /dest|]
+WORKDIR   /after
+
+== should keep multiple comments in a touched copy instruction with a flag ==
+WORKDIR   /before
+COPY   --from=x   a   \
+#one
+   b   \
+  #tw[||]o
+ /dest
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+COPY --from=x \
+     a \
+     # one
+     b \
+     # two
+     /dest
+WORKDIR   /after

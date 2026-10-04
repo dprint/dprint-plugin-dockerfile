@@ -1,0 +1,12 @@
+~~ indentStages: true, indentWidth: 4 ~~
+== should indent a touched instruction in a stage by the indent width ==
+FROM alpine
+RUN   echo   one   \
+    && echo   [|two|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+    [|RUN echo one \
+        && echo two|]
+WORKDIR   /after

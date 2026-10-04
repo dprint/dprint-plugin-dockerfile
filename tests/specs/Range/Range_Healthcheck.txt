@@ -1,0 +1,126 @@
+== should format a touched healthcheck instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=30s    --timeout=3s   CMD   [|curl|]   -f   http://localhost/
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost/|]
+WORKDIR   /after
+
+== should format a touched healthcheck instruction with an exec form ==
+WORKDIR   /before
+healthcheck   --retries=3   cmd   ["curl",[|"-f"|],"http://localhost/"]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --retries=3 CMD ["curl", "-f", "http://localhost/"]|]
+WORKDIR   /after
+
+== should format a touched healthcheck none instruction ==
+WORKDIR   /before
+HEALTHCHECK    [|NONE|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK NONE|]
+WORKDIR   /after
+
+== should keep the line continuation of a touched healthcheck instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=5m    \
+      CMD   [|curl|]   -f   http://localhost/
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=5m \
+  CMD curl -f http://localhost/|]
+WORKDIR   /after
+
+== should format a healthcheck instruction touched on its first line ==
+WORKDIR   /before
+HEALTHCHECK   --interval=[|5m|]    \
+      CMD   curl   -f   http://localhost/
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=5m \
+  CMD curl -f http://localhost/|]
+WORKDIR   /after
+
+== should move a comment out of a touched healthcheck instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=30s   \
+#healthcheck comm[||]ent
+CMD   curl
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+# healthcheck comment
+HEALTHCHECK --interval=30s \
+  CMD curl
+WORKDIR   /after
+
+== should keep the continuation inside the command of a touched healthcheck instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=5m   \
+  CMD   curl   -f   http://localhost/   \
+    &&   echo   [|ok|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=5m \
+  CMD curl -f http://localhost/ \
+    && echo ok|]
+WORKDIR   /after
+
+== should collapse the continuation before none in a touched healthcheck instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=30s   \
+  NO[||]NE
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+HEALTHCHECK --interval=30s NONE
+WORKDIR   /after
+
+== should keep the continuation of a touched healthcheck instruction without options ==
+WORKDIR   /before
+HEALTHCHECK   \
+      CMD   [|curl|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK \
+  CMD curl|]
+WORKDIR   /after
+
+== should keep the continuation before the exec form of a touched healthcheck instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=5m   \
+CMD   [ "curl" , [|"-f"|] ]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=5m \
+  CMD ["curl", "-f"]|]
+WORKDIR   /after
+
+== should format a touched healthcheck instruction with a dash in a flag ==
+WORKDIR   /before
+HEALTHCHECK   --start-period=5s   CMD   [|test|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --start-period=5s CMD test|]
+WORKDIR   /after

@@ -1,0 +1,11 @@
+~~ indentStages: true, lineWidth: 50 ~~
+== should wrap a touched label that only fits without the stage indentation ==
+FROM alpine
+LABEL a.label="value1" b.label2=[|"value23456789012"|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|LABEL a.label="value1" \
+        b.label2="value23456789012"|]
+WORKDIR   /after
