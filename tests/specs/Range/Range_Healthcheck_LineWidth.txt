@@ -1,0 +1,44 @@
+~~ lineWidth: 40 ~~
+== should wrap a touched healthcheck instruction exceeding the line width ==
+WORKDIR   /before
+HEALTHCHECK   --interval=30s   CMD   [|curl|] -f http://localhost/ || exit 1
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=30s \
+  CMD curl -f http://localhost/ || exit 1|]
+WORKDIR   /after
+
+== should keep a touched healthcheck instruction that fits on one line ==
+WORKDIR   /before
+HEALTHCHECK   --retries=3   CMD   [|test|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --retries=3 CMD test|]
+WORKDIR   /after
+
+== should not wrap the healthcheck instructions that aren't touched ==
+WORKDIR   /before
+HEALTHCHECK --interval=30s CMD curl -f http://localhost/ || exit 1
+HEALTHCHECK   --retries=3   CMD   [|test|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+HEALTHCHECK --interval=30s CMD curl -f http://localhost/ || exit 1
+[|HEALTHCHECK --retries=3 CMD test|]
+WORKDIR   /after
+
+== should wrap before the cmd of a touched healthcheck instruction without options ==
+WORKDIR   /before
+HEALTHCHECK   CMD   [|curl|] -f http://localhost/ || exit 1
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK \
+  CMD curl -f http://localhost/ || exit 1|]
+WORKDIR   /after

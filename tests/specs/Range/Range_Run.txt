@@ -1,0 +1,99 @@
+== should format a touched run instruction ==
+WORKDIR   /before
+RUN   [|echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi|]
+WORKDIR   /after
+
+== should format a touched lowercase run instruction ==
+WORKDIR   /before
+run   [|echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi|]
+WORKDIR   /after
+
+== should format a touched exec form run instruction ==
+WORKDIR   /before
+RUN   [ "echo" ,   [|"hi"|] ]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN ["echo", "hi"]|]
+WORKDIR   /after
+
+== should not collapse the spaces inside quotes of a touched run instruction ==
+WORKDIR   /before
+RUN   echo   "a   [|b|]"   'c   d'   e\   f
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo "a   b" 'c   d' e\  f|]
+WORKDIR   /after
+
+== should keep the continuation indentation of a touched run instruction ==
+WORKDIR   /before
+RUN   apt-get   update   \
+      &&   apt-get   [|install|]   -y   curl   \
+  &&   rm   -rf   /var/lib/apt/lists/*
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN apt-get update \
+      && apt-get install -y curl \
+  && rm -rf /var/lib/apt/lists/*|]
+WORKDIR   /after
+
+== should keep a quote continued across the lines of a touched run instruction ==
+WORKDIR   /before
+RUN   echo   "one   \
+   two"   [|three|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo "one   \
+   two" three|]
+WORKDIR   /after
+
+== should drop a dangling line continuation of a touched run instruction ==
+WORKDIR   /before
+RUN   echo   [|hi|]   \
+
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi|]
+
+WORKDIR   /after
+
+== should format a touched run instruction with a flag ==
+WORKDIR   /before
+RUN   --mount=type=cache,target=/root/.cache   [|pip|]   install   x
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN --mount=type=cache,target=/root/.cache pip install x|]
+WORKDIR   /after
+
+== should keep a single quote continued across the lines of a touched run instruction ==
+WORKDIR   /before
+RUN   echo   'one   \
+   two'   [|three|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo 'one   \
+   two' three|]
+WORKDIR   /after

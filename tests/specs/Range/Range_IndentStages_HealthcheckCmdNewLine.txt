@@ -1,0 +1,11 @@
+~~ indentStages: true, healthcheckCmdNewLine: true ~~
+== should indent the command split from a touched healthcheck instruction in a stage ==
+FROM alpine
+HEALTHCHECK   --interval=30s   CMD   [|curl|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|HEALTHCHECK --interval=30s \
+    CMD curl|]
+WORKDIR   /after

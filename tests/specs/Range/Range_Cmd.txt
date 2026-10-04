@@ -1,0 +1,33 @@
+== should format a touched cmd instruction ==
+WORKDIR   /before
+CMD   [|echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|CMD echo hi|]
+WORKDIR   /after
+
+== should format a touched exec form cmd instruction ==
+WORKDIR   /before
+cmd   ["node",[|"main.js"|]   ]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|CMD ["node", "main.js"]|]
+WORKDIR   /after
+
+== should format a touched cmd instruction spanning lines ==
+WORKDIR   /before
+CMD   node   \
+    [|main.js|]   \
+    --flag
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|CMD node \
+    main.js \
+    --flag|]
+WORKDIR   /after

@@ -2,6 +2,7 @@ use dprint_core::formatting::ir_helpers::SingleLineOptions;
 use dprint_core::formatting::ir_helpers::gen_from_raw_string;
 use dprint_core::formatting::*;
 use dprint_core_macros::sc;
+use std::ops::Range;
 
 use super::context::Context;
 use super::helpers::*;
@@ -9,13 +10,29 @@ use crate::ast::*;
 use crate::configuration::Configuration;
 
 pub fn generate<'a>(file: &'a Dockerfile<'a>, text: &'a str, config: &'a Configuration) -> PrintItems {
+  let nodes = top_level_nodes(file, text);
+  let mut items = generate_nodes(&nodes, 0..nodes.len(), file, text, config);
+  if !nodes.is_empty() {
+    items.push_signal(Signal::NewLine);
+  }
+  items
+}
+
+/// The instructions of the file along with the comments between them.
+pub fn top_level_nodes<'a>(file: &'a Dockerfile<'a>, text: &'a str) -> Vec<Node<'a>> {
+  nodes_with_comments(text, 0, text.len(), true, file.instructions.iter().map(|i| i.into()))
+}
+
+/// Generates the top-level nodes at the provided indexes as they're written
+/// when formatting the whole file, without a newline after the last one.
+pub fn generate_nodes<'a>(nodes: &[Node<'a>], indexes: Range<usize>, file: &'a Dockerfile<'a>, text: &'a str, config: &'a Configuration) -> PrintItems {
   let mut context = Context::new(text, file, config);
   let mut items = PrintItems::new();
-  let top_level_nodes = context.gen_nodes_with_comments(0, text.len(), true, file.instructions.iter().map(|i| i.into()));
-  let is_stage_body = resolve_stage_bodies(&top_level_nodes, text, config);
+  let is_stage_body = resolve_stage_bodies(nodes, text, config);
   let stage_indent_width = stage_indent_width(config);
 
-  for (i, node) in top_level_nodes.iter().enumerate() {
+  for i in indexes.clone() {
+    let node = &nodes[i];
     // a continuation line keeps the indentation it had in the source, so when
     // indenting stages moves the instruction, strip the instruction's own
     // indentation from it and let the printer add back the indentation of
@@ -35,11 +52,11 @@ pub fn generate<'a>(file: &'a Dockerfile<'a>, text: &'a str, config: &'a Configu
       instruction_items = ir_helpers::with_indent_times(instruction_items, stage_indent_width);
     }
     items.extend(instruction_items);
-    items.push_signal(Signal::NewLine);
-    if let Some(next_node) = top_level_nodes.get(i + 1)
-      && has_blank_line_between(node, next_node, text)
-    {
+    if i + 1 < indexes.end {
       items.push_signal(Signal::NewLine);
+      if has_blank_line_between(node, &nodes[i + 1], text) {
+        items.push_signal(Signal::NewLine);
+      }
     }
   }
 

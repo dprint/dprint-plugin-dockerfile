@@ -1,0 +1,428 @@
+== should format only the touched instruction ==
+WORKDIR   /before
+RUN   echo   [|hi|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi|]
+WORKDIR   /after
+
+== should format the instruction the cursor is in ==
+WORKDIR   /before
+RUN   ec[||]ho   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN echo hi
+WORKDIR   /after
+
+== should format the instruction with the cursor at the start of its line ==
+WORKDIR   /before
+[||]RUN   echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN echo hi
+WORKDIR   /after
+
+== should format the instruction with the cursor at the end of its line ==
+WORKDIR   /before
+RUN   echo   hi   [||]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN echo hi
+WORKDIR   /after
+
+== should format the instruction with the cursor in its indentation ==
+WORKDIR   /before
+  [||]  RUN   echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN echo hi
+WORKDIR   /after
+
+== should format the instruction when only its indentation is selected ==
+WORKDIR   /before
+[|    |]RUN   echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi|]
+WORKDIR   /after
+
+== should format the instruction when only its trailing whitespace is selected ==
+WORKDIR   /before
+RUN   echo   hi[|    |]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi|]
+WORKDIR   /after
+
+== should format several touched instructions ==
+WORKDIR   /before
+RUN   echo   [|one
+COPY   a   b
+USER|]   root
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo one
+COPY a b
+USER root|]
+WORKDIR   /after
+
+== should format the blank lines between the touched instructions ==
+WORKDIR   /before
+
+
+RUN   echo   [|one
+
+
+
+COPY   a|]   b
+
+
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+
+
+[|RUN echo one
+
+COPY a b|]
+
+
+WORKDIR   /after
+
+== should keep a single blank line between the touched instructions ==
+WORKDIR   /before
+RUN   echo   [|one
+
+COPY   a|]   b
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo one
+
+COPY a b|]
+WORKDIR   /after
+
+== should not format the instruction on the line after a range ending at a line break ==
+WORKDIR   /before
+[|RUN   echo   hi
+|]USER   root
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo hi|]
+USER   root
+WORKDIR   /after
+
+== should not format the instruction on the line before a range starting at a line break ==
+WORKDIR   /before
+USER   root[|
+RUN   echo   hi|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+USER   root
+[|RUN echo hi|]
+WORKDIR   /after
+
+== should format both instructions when the range holds more than the line break between them ==
+WORKDIR   /before
+USER   roo[|t
+R|]UN   echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|USER root
+RUN echo hi|]
+WORKDIR   /after
+
+== should format all the lines of an instruction touched on its first line ==
+WORKDIR   /before
+RUN   [|echo|]   one   \
+    && echo   two   \
+    && echo   three
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo one \
+    && echo two \
+    && echo three|]
+WORKDIR   /after
+
+== should format all the lines of an instruction touched on a continuation line ==
+WORKDIR   /before
+RUN   echo   one   \
+    && echo   [|two|]   \
+    && echo   three
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|RUN echo one \
+    && echo two \
+    && echo three|]
+WORKDIR   /after
+
+== should format all the lines of an instruction touched on its last line ==
+WORKDIR   /before
+RUN   echo   one   \
+    && echo   two   \
+    && echo   three[||]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN echo one \
+    && echo two \
+    && echo three
+WORKDIR   /after
+
+== should format nothing when the touched instruction is already formatted ==
+WORKDIR   /before
+RUN echo [|hi|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+RUN echo [|hi|]
+WORKDIR   /after
+
+== should format nothing when only touching the blank lines between instructions ==
+WORKDIR   /before
+
+[||]
+
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+
+
+
+WORKDIR   /after
+
+== should format nothing when selecting the blank lines between instructions ==
+WORKDIR   /before
+[|
+
+|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+
+
+
+WORKDIR   /after
+
+== should format nothing when only touching the blank lines at the start of the file ==
+
+[||]
+
+USER   root
+RUN   echo   hi
+
+[expect]
+
+
+
+USER   root
+RUN   echo   hi
+
+== should format nothing when only touching the blank lines at the end of the file ==
+USER   root
+RUN   echo   hi
+
+[||]
+
+
+[expect]
+USER   root
+RUN   echo   hi
+
+
+
+
+== should format the first instruction without the blank lines before it ==
+
+
+[|USER   root|]
+RUN   echo   hi
+
+[expect]
+
+
+[|USER root|]
+RUN   echo   hi
+
+== should format the last instruction without the blank lines after it ==
+USER   root
+[|RUN   echo   hi|]
+
+
+
+[expect]
+USER   root
+[|RUN echo hi|]
+
+
+
+== should format the whole file when touching the first and last instructions ==
+
+
+USER   [|root
+
+
+
+RUN|]   echo   hi
+
+
+
+[expect]
+USER root
+
+RUN echo hi
+
+== should format the whole file when touching its only instruction ==
+
+
+RUN   echo   [|hi|]
+
+
+
+[expect]
+RUN echo hi
+
+== should format the whole file when the range covers it ==
+[|
+
+USER   root
+RUN   echo   hi
+|]
+
+[expect]
+USER root
+RUN echo hi
+
+== should format nothing in a file without instructions ==
+
+[||]
+
+
+[expect]
+
+
+
+
+== should format nothing when only selecting the line break between two instructions ==
+WORKDIR   /before
+USER   root[|
+|]RUN   echo   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+USER   root
+RUN   echo   hi
+WORKDIR   /after
+
+== should format the instruction when only the whitespace after its last argument is selected ==
+WORKDIR   /before
+ARG   VERSION=1[|   |]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ARG VERSION=1|]
+WORKDIR   /after
+
+== should format the instruction with the cursor after the whitespace following its last argument ==
+WORKDIR   /before
+FROM   alpine   AS   build   [||]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+FROM alpine AS build
+WORKDIR   /after
+
+== should format the exec form instruction with the cursor after its trailing whitespace ==
+WORKDIR   /before
+CMD   [ "a" ]   [||]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+CMD ["a"]
+WORKDIR   /after
+
+== should format the instruction with the cursor after its dangling line continuation ==
+WORKDIR   /before
+ARG   VERSION=1   \[||]
+
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+ARG VERSION=1
+
+WORKDIR   /after
+
+== should keep the blank lines around a touched instruction when they are selected too ==
+WORKDIR   /before
+[|
+
+RUN   echo   hi
+
+
+|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+
+
+RUN echo hi
+
+
+
+WORKDIR   /after
+
+== should format the first instruction with the cursor at the start of the file ==
+[||]USER   root
+RUN   echo   hi
+
+[expect]
+USER root
+RUN   echo   hi
+
+== should format a touched instruction after multi-byte characters ==
+#   héllo   ✓
+RUN   echo   "✓"   [|hi|]
+WORKDIR   /after
+
+[expect]
+#   héllo   ✓
+[|RUN echo "✓" hi|]
+WORKDIR   /after

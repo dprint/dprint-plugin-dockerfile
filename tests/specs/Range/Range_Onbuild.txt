@@ -1,0 +1,74 @@
+== should format a touched onbuild instruction ==
+WORKDIR   /before
+ONBUILD   RUN   [|echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD RUN echo hi|]
+WORKDIR   /after
+
+== should format a touched onbuild instruction with an exec form ==
+WORKDIR   /before
+onbuild   cmd   ["a",[|"b"|]]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD CMD ["a", "b"]|]
+WORKDIR   /after
+
+== should format a touched onbuild instruction with a misc instruction ==
+WORKDIR   /before
+ONBUILD   ADD   [|.|]   /app/src
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD ADD .   /app/src|]
+WORKDIR   /after
+
+== should move a comment out of a touched onbuild instruction ==
+WORKDIR   /before
+ONBUILD   \
+#onbuild comment
+RUN   [|echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|# onbuild comment
+ONBUILD RUN echo hi|]
+WORKDIR   /after
+
+== should format a touched onbuild instruction that can't be parsed further ==
+WORKDIR   /before
+ONBUILD   [|123|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD 123|]
+WORKDIR   /after
+
+== should format a touched onbuild instruction spanning lines ==
+WORKDIR   /before
+ONBUILD   RUN   echo   one   \
+    &&   echo   [|two|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD RUN echo one \
+    && echo two|]
+WORKDIR   /after
+
+== should format a touched onbuild instruction with a healthcheck ==
+WORKDIR   /before
+ONBUILD   HEALTHCHECK   --interval=5m   CMD   [|curl|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ONBUILD HEALTHCHECK --interval=5m CMD curl|]
+WORKDIR   /after

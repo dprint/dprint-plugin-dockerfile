@@ -1,0 +1,45 @@
+== should format a touched entrypoint instruction ==
+WORKDIR   /before
+ENTRYPOINT   [|echo|]   hi
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENTRYPOINT echo hi|]
+WORKDIR   /after
+
+== should format a touched exec form entrypoint instruction ==
+WORKDIR   /before
+entrypoint   ["node",[|"main.js"|]   ]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENTRYPOINT ["node", "main.js"]|]
+WORKDIR   /after
+
+== should format a touched entrypoint instruction spanning lines ==
+WORKDIR   /before
+ENTRYPOINT   node   \
+    [|main.js|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENTRYPOINT node \
+    main.js|]
+WORKDIR   /after
+
+== should keep a comment in a touched entrypoint instruction ==
+WORKDIR   /before
+ENTRYPOINT   node   \
+    #comm[||]ent
+    main.js
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+ENTRYPOINT node \
+    # comment
+    main.js
+WORKDIR   /after

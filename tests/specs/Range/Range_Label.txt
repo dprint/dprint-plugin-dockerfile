@@ -1,0 +1,81 @@
+~~ lineWidth: 50 ~~
+== should format a touched label instruction ==
+WORKDIR   /before
+LABEL   some.label=[|"value1"|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|LABEL some.label="value1"|]
+WORKDIR   /after
+
+== should format a touched label instruction with several labels ==
+WORKDIR   /before
+LABEL   multi="value1"   [|label|]="value2"
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|LABEL multi="value1" label="value2"|]
+WORKDIR   /after
+
+== should break a touched label instruction exceeding the line width ==
+WORKDIR   /before
+LABEL multi.label="value1"   [|multi.label2|]="value2"   other="value3"
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|LABEL multi.label="value1" \
+      multi.label2="value2" \
+      other="value3"|]
+WORKDIR   /after
+
+== should keep a touched label instruction on multiple lines ==
+WORKDIR   /before
+LABEL   multi="value1"   \
+  [|label|]="value2"
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|LABEL multi="value1" \
+      label="value2"|]
+WORKDIR   /after
+
+== should keep a comment between the labels of a touched instruction ==
+WORKDIR   /before
+LABEL   a=b   \
+#label comm[||]ent
+c=d
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+LABEL a=b \
+      # label comment
+      c=d
+WORKDIR   /after
+
+== should format a touched label instruction without an equals sign ==
+WORKDIR   /before
+LABEL   [|version|]   1.0
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|LABEL version=1.0|]
+WORKDIR   /after
+
+== should move a leading comment out of a touched label instruction ==
+WORKDIR   /before
+LABEL   \
+#label comm[||]ent
+a=b
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+# label comment
+LABEL a=b
+WORKDIR   /after

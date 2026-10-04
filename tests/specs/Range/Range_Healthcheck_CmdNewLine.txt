@@ -1,0 +1,57 @@
+~~ healthcheckCmdNewLine: true ~~
+== should split the cmd of a touched healthcheck instruction onto its own line ==
+WORKDIR   /before
+HEALTHCHECK   --interval=30s   CMD   [|curl|]   -f   http://localhost/
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=30s \
+  CMD curl -f http://localhost/|]
+WORKDIR   /after
+
+== should not split a touched healthcheck instruction without options ==
+WORKDIR   /before
+HEALTHCHECK   CMD   [|curl|]   -f   http://localhost/
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK CMD curl -f http://localhost/|]
+WORKDIR   /after
+
+== should not split the healthcheck instructions that aren't touched ==
+WORKDIR   /before
+HEALTHCHECK --interval=30s CMD one
+HEALTHCHECK   --interval=30s   CMD   [|two|]
+HEALTHCHECK --interval=30s CMD three
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+HEALTHCHECK --interval=30s CMD one
+[|HEALTHCHECK --interval=30s \
+  CMD two|]
+HEALTHCHECK --interval=30s CMD three
+WORKDIR   /after
+
+== should not split a touched healthcheck none instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=30s   [|NONE|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=30s NONE|]
+WORKDIR   /after
+
+== should split the exec form cmd of a touched healthcheck instruction ==
+WORKDIR   /before
+HEALTHCHECK   --interval=30s   CMD   ["curl",[|"-f"|]]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|HEALTHCHECK --interval=30s \
+  CMD ["curl", "-f"]|]
+WORKDIR   /after

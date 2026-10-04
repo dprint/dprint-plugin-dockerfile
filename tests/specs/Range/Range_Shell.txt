@@ -1,0 +1,30 @@
+== should format a touched shell instruction ==
+WORKDIR   /before
+SHELL   ["powershell",[|"-command"|]   ]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|SHELL ["powershell", "-command"]|]
+WORKDIR   /after
+
+== should format a touched shell form shell instruction ==
+WORKDIR   /before
+shell   [|powershell|]   -command
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|SHELL powershell   -command|]
+WORKDIR   /after
+
+== should collapse a touched exec form shell instruction spanning lines ==
+WORKDIR   /before
+SHELL   [ "a", \
+   [|"b"|] ]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|SHELL ["a", "b"]|]
+WORKDIR   /after

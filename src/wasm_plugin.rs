@@ -26,6 +26,7 @@ impl SyncPluginHandler<Configuration> for DockerfilePluginHandler {
       file_matching: FileMatchingInfo {
         file_extensions: vec!["dockerfile".to_string()],
         file_names: vec!["Dockerfile".to_string()],
+        additive: false,
       },
     }
   }
@@ -52,7 +53,11 @@ impl SyncPluginHandler<Configuration> for DockerfilePluginHandler {
 
   fn format(&mut self, request: SyncFormatRequest<Configuration>, _format_with_host: impl FnMut(SyncHostFormatRequest) -> FormatResult) -> FormatResult {
     let file_text = String::from_utf8(request.file_bytes)?;
-    let result = super::format_text(request.file_path, &file_text, request.config).map_err(FormatError::new)?;
+    let result = match request.range {
+      Some(range) => super::format_text_range(request.file_path, &file_text, range, request.config),
+      None => super::format_text(request.file_path, &file_text, request.config),
+    }
+    .map_err(FormatError::new)?;
     Ok(result.map(|file_text| file_text.into_bytes()))
   }
 }

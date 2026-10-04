@@ -1,0 +1,329 @@
+~~ indentStages: true ~~
+== should indent a touched instruction in a stage ==
+FROM alpine
+RUN   echo   [|hi|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN echo hi|]
+WORKDIR   /after
+
+== should re-indent a touched instruction in a stage ==
+FROM alpine
+        RUN   echo   [|hi|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN echo hi|]
+WORKDIR   /after
+
+== should format nothing when the touched instruction in a stage is already formatted ==
+FROM alpine
+  RUN echo [|hi|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  RUN echo [|hi|]
+WORKDIR   /after
+
+== should indent the continuation lines of a touched instruction ==
+FROM alpine
+RUN   echo   one   \
+    && echo   [|two|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN echo one \
+      && echo two|]
+WORKDIR   /after
+
+== should re-indent the continuation lines of a touched instruction ==
+FROM alpine
+    RUN   echo   one   \
+        && echo   [|two|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN echo one \
+      && echo two|]
+WORKDIR   /after
+
+== should indent several touched instructions in a stage ==
+FROM alpine
+RUN   echo   [|one
+
+
+COPY   a|]   b
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN echo one
+
+  COPY a b|]
+WORKDIR   /after
+
+== should indent a touched env instruction in a stage ==
+FROM alpine
+ENV   A=1   \
+  [|B|]=2
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|ENV A=1 \
+      B=2|]
+WORKDIR   /after
+
+== should indent a touched healthcheck instruction in a stage ==
+FROM alpine
+HEALTHCHECK   --interval=5m   \
+  CMD   [|curl|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|HEALTHCHECK --interval=5m \
+    CMD curl|]
+WORKDIR   /after
+
+== should indent a comment moved out of a touched instruction in a stage ==
+FROM alpine
+ARG   \
+#arg comment
+[|VERSION|]=1
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|# arg comment
+  ARG VERSION=1|]
+WORKDIR   /after
+
+== should not indent the heredoc body of a touched instruction ==
+FROM alpine
+RUN   [|<<EOF|]
+echo hi
+EOF
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN <<EOF
+echo hi
+EOF|]
+WORKDIR   /after
+
+== should indent a touched comment in a stage ==
+FROM alpine
+#[|comment|]
+
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|# comment|]
+
+WORKDIR   /after
+
+== should not indent a touched comment directly above a stage ==
+FROM alpine
+RUN echo hi
+  #[|comment|]
+FROM alpine AS two
+WORKDIR   /after
+
+[expect]
+FROM alpine
+RUN echo hi
+[|# comment|]
+FROM alpine AS two
+WORKDIR   /after
+
+== should indent a touched comment separated from the stage below it by a blank line ==
+FROM alpine
+RUN echo hi
+#[|comment|]
+
+FROM alpine AS two
+WORKDIR   /after
+
+[expect]
+FROM alpine
+RUN echo hi
+  [|# comment|]
+
+FROM alpine AS two
+WORKDIR   /after
+
+== should not indent a touched stage ==
+FROM alpine
+RUN echo hi
+    FROM   alpine   [|AS|]   two
+WORKDIR   /after
+
+[expect]
+FROM alpine
+RUN echo hi
+[|FROM alpine AS two|]
+WORKDIR   /after
+
+== should not indent a touched instruction before the first stage ==
+ARG   VERSION=1
+  ARG   [|OTHER|]=2
+FROM alpine
+WORKDIR   /after
+
+[expect]
+ARG   VERSION=1
+[|ARG OTHER=2|]
+FROM alpine
+WORKDIR   /after
+
+== should indent a touched instruction in a tab indented stage ==
+FROM alpine
+	RUN   foo   \
+		[|bar|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN foo \
+  	bar|]
+WORKDIR   /after
+
+== should indent the touched instructions on both sides of a stage ==
+FROM alpine
+RUN   echo   [|one
+  #about two
+    FROM   alpine   AS   two
+RUN   echo|]   two
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN echo one
+# about two
+FROM alpine AS two
+  RUN echo two|]
+WORKDIR   /after
+
+== should indent a touched instruction in a later stage ==
+FROM alpine
+RUN echo hi
+FROM alpine AS two
+RUN   echo   [|two|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+RUN echo hi
+FROM alpine AS two
+  [|RUN echo two|]
+WORKDIR   /after
+
+== should not indent the line continued within a quote of a touched instruction ==
+FROM alpine
+RUN   echo   "one   \
+   two"   [|three|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN echo "one   \
+   two" three|]
+WORKDIR   /after
+
+== should indent a touched onbuild instruction spanning lines ==
+FROM alpine
+ONBUILD   RUN   echo   one   \
+    &&   echo   [|two|]
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|ONBUILD RUN echo one \
+      && echo two|]
+WORKDIR   /after
+
+== should re-indent a touched heredoc instruction without its body ==
+FROM alpine
+      RUN   <<EOF
+  echo   [|hi|]
+EOF
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|RUN <<EOF
+  echo   hi
+EOF|]
+WORKDIR   /after
+
+== should not treat a from in a touched heredoc body as a stage ==
+ARG   VERSION=1
+RUN   <<EOF
+FROM   [|x|]
+EOF
+WORKDIR   /after
+
+[expect]
+ARG   VERSION=1
+[|RUN <<EOF
+FROM   x
+EOF|]
+WORKDIR   /after
+
+== should indent a comment within a touched instruction ==
+FROM alpine
+RUN   echo   foo   \
+    #comm[||]ent
+    bar
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  RUN echo foo \
+      # comment
+      bar
+WORKDIR   /after
+
+== should indent the comment following a touched instruction on its line ==
+FROM alpine
+ARG   VERSION=[|1|]   #comment
+WORKDIR   /after
+
+[expect]
+FROM alpine
+  [|ARG VERSION=1
+  # comment|]
+WORKDIR   /after
+
+== should indent a touched instruction under a backtick escape directive ==
+# escape=`
+FROM alpine
+RUN   a   `
+    [|b|]
+WORKDIR   /after
+
+[expect]
+# escape=`
+FROM alpine
+  [|RUN a `
+      b|]
+WORKDIR   /after
+
+== should indent the last instruction of a stage without the ones before it ==
+FROM   alpine
+RUN   echo   one
+RUN   echo   [|two|]
+
+[expect]
+FROM   alpine
+RUN   echo   one
+  [|RUN echo two|]

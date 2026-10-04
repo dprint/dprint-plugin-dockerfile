@@ -1,0 +1,63 @@
+== should format a touched from instruction ==
+WORKDIR   /before
+FROM   [|alpine|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|FROM alpine|]
+WORKDIR   /after
+
+== should format a touched from instruction with a tag and alias ==
+WORKDIR   /before
+from   alpine:3.18   [|as|]   build
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|FROM alpine:3.18 AS build|]
+WORKDIR   /after
+
+== should format a touched from instruction with a flag ==
+WORKDIR   /before
+FROM   --platform=linux/amd64   [|alpine|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|FROM --platform=linux/amd64 alpine|]
+WORKDIR   /after
+
+== should format a touched from instruction spanning lines ==
+WORKDIR   /before
+FROM   alpine   \
+  [|AS|]   build
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|FROM alpine AS build|]
+WORKDIR   /after
+
+== should format a touched from instruction with a digest ==
+WORKDIR   /before
+FROM   alpine@sha256:abc   [|as|]   build
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|FROM alpine@sha256:abc AS build|]
+WORKDIR   /after
+
+== should move a comment before the alias out of a touched from instruction ==
+WORKDIR   /before
+FROM   alpine   \
+#alias comm[||]ent
+AS   build
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+# alias comment
+FROM alpine AS build
+WORKDIR   /after

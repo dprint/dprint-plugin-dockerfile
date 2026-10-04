@@ -1,12 +1,14 @@
 pub mod ast;
 pub mod configuration;
 mod error;
+mod format_range;
 mod format_text;
 mod generation;
 mod parser;
 
 pub use error::FormatError;
 pub use error::ParseError;
+pub use format_range::format_text_range;
 pub use format_text::format_text;
 
 #[cfg(feature = "tracing")]

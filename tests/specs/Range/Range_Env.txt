@@ -1,0 +1,101 @@
+~~ lineWidth: 50 ~~
+== should format a touched env instruction ==
+WORKDIR   /before
+ENV   MY_NAME=[|"John Doe"|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENV MY_NAME="John Doe"|]
+WORKDIR   /after
+
+== should format a touched env instruction with several vars ==
+WORKDIR   /before
+env   MY_CAT=fluffy    [|Test|]=asdf
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENV MY_CAT=fluffy Test=asdf|]
+WORKDIR   /after
+
+== should add an equals sign to a touched env instruction ==
+WORKDIR   /before
+ENV   [|TEST|]   /test-dir
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENV TEST=/test-dir|]
+WORKDIR   /after
+
+== should add quotes to a touched env instruction ==
+WORKDIR   /before
+ENV   ONE   [|TWO|]=    THREE=world
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENV ONE="TWO=    THREE=world"|]
+WORKDIR   /after
+
+== should break a touched env instruction exceeding the line width ==
+WORKDIR   /before
+ENV   MY_NAME="John Doe"   [|MY_DOG|]=RexTheDog   MY_CAT=fluffy
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENV MY_NAME="John Doe" \
+    MY_DOG=RexTheDog \
+    MY_CAT=fluffy|]
+WORKDIR   /after
+
+== should keep a touched env instruction on multiple lines ==
+WORKDIR   /before
+ENV   A=1   \
+  [|B|]=2
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENV A=1 \
+    B=2|]
+WORKDIR   /after
+
+== should keep a comment between the vars of a touched env instruction ==
+WORKDIR   /before
+ENV   MY_NAME="John Doe"   \
+#test[||]ing
+    MY_DOG=RexTheDog
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+ENV MY_NAME="John Doe" \
+    # testing
+    MY_DOG=RexTheDog
+WORKDIR   /after
+
+== should move a comment out of a touched single value env instruction ==
+WORKDIR   /before
+ENV   \
+#env comm[||]ent
+FOO   bar
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+# env comment
+ENV FOO=bar
+WORKDIR   /after
+
+== should quote the escaped spaces of a touched env instruction ==
+WORKDIR   /before
+ENV   MY_DOG=Rex\ The\ [|Dog|]
+WORKDIR   /after
+
+[expect]
+WORKDIR   /before
+[|ENV MY_DOG="Rex The Dog"|]
+WORKDIR   /after
