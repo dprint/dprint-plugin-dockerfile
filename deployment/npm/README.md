@@ -14,5 +14,8 @@ import * as fs from "fs";
 const buffer = fs.readFileSync(getPath());
 const formatter = createFromBuffer(buffer);
 
-console.log(formatter.formatText("test.dockerfile", "RUN      /bin/bash"));
+console.log(formatter.formatText({
+  filePath: "test.dockerfile",
+  fileText: "RUN      /bin/bash",
+}));
 ```
