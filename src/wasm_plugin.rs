@@ -54,8 +54,8 @@ impl SyncPluginHandler<Configuration> for DockerfilePluginHandler {
   fn format(&mut self, request: SyncFormatRequest<Configuration>, _format_with_host: impl FnMut(SyncHostFormatRequest) -> FormatResult) -> FormatResult {
     let file_text = String::from_utf8(request.file_bytes)?;
     let result = match request.range {
-      Some(range) => super::format_text_range(request.file_path, &file_text, range, request.config),
-      None => super::format_text(request.file_path, &file_text, request.config),
+      Some(range) => crate::format_range::format_text_range_with_arena_pool(request.file_path, &file_text, range, request.config, Some(request.arena_pool)),
+      None => crate::format_text::format_text_with_arena_pool(request.file_path, &file_text, request.config, Some(request.arena_pool)),
     }
     .map_err(FormatError::new)?;
     Ok(result.map(|file_text| file_text.into_bytes()))

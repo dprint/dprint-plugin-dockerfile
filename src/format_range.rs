@@ -3,13 +3,15 @@ use std::path::Path;
 
 use dprint_core::configuration::NewLineKind;
 use dprint_core::configuration::resolve_new_line_kind;
+use dprint_core::formatting::ArenaPool;
 use dprint_core::formatting::PrintOptions;
 
 use crate::ast::Dockerfile;
 use crate::configuration::Configuration;
 use crate::error::FormatError;
 use crate::format_text::config_to_print_options;
-use crate::format_text::format_text;
+use crate::format_text::create_arena;
+use crate::format_text::format_text_with_arena_pool;
 use crate::format_text::parse_node;
 use crate::format_text::strip_bom;
 use crate::generation::Node;
@@ -25,6 +27,18 @@ use crate::generation::top_level_nodes;
 /// with a lone carriage return, and one that only touches blank lines formats
 /// nothing.
 pub fn format_text_range(file_path: &Path, text: &str, range: Range<usize>, config: &Configuration) -> Result<Option<String>, FormatError> {
+  format_text_range_with_arena_pool(file_path, text, range, config, None)
+}
+
+/// Formats the range, creating the arena from the pool when one is provided so
+/// its memory is reused between formats.
+pub(crate) fn format_text_range_with_arena_pool(
+  file_path: &Path,
+  text: &str,
+  range: Range<usize>,
+  config: &Configuration,
+  arena_pool: Option<&ArenaPool>,
+) -> Result<Option<String>, FormatError> {
   let body = strip_bom(text);
   let bom_len = text.len() - body.len();
   let end = range.end.saturating_sub(bom_len).min(body.len());
@@ -34,19 +48,21 @@ pub fn format_text_range(file_path: &Path, text: &str, range: Range<usize>, conf
   // for the line lookups here, which is rare enough to leave to formatting the
   // whole file
   if range == (0..body.len()) || has_lone_carriage_return(body) {
-    return format_text(file_path, text, config);
+    return format_text_with_arena_pool(file_path, text, config, arena_pool);
   }
 
   let file = parse_node(body)?;
   let nodes = top_level_nodes(&file, body);
   let indexes = match find_target(&nodes, &file, &range) {
-    Target::File => return format_text(file_path, text, config),
+    Target::File => return format_text_with_arena_pool(file_path, text, config, arena_pool),
     Target::Nothing => return Ok(None),
     Target::Nodes(indexes) => indexes,
   };
   let replaced = line_start(&file, nodes[indexes.start].span().start)..line_end(&file, nodes[indexes.end - 1].span().end);
-  let formatted = dprint_core::formatting::format(
-    || generate_nodes(&nodes, indexes, &file, body, config),
+  let arena = create_arena(arena_pool);
+  let print_items = generate_nodes(&arena, &nodes, indexes, &file, body, config);
+  let formatted = dprint_core::formatting::print(
+    print_items,
     PrintOptions {
       // keep the file's line endings since changing them is up to formatting
       // the whole file
@@ -124,6 +140,7 @@ fn has_lone_carriage_return(text: &str) -> bool {
 mod test {
   use super::*;
   use crate::configuration::ConfigurationBuilder;
+  use crate::format_text::format_text;
 
   #[test]
   fn keeps_bom_outside_range() {
