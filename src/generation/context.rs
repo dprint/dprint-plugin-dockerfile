@@ -1,3 +1,4 @@
+use dprint_core::formatting::Arena;
 use std::collections::HashSet;
 
 use crate::ast::Dockerfile;
@@ -8,6 +9,7 @@ use super::helpers::nodes_with_comments;
 use crate::configuration::Configuration;
 
 pub struct Context<'a> {
+  pub arena: &'a Arena,
   pub config: &'a Configuration,
   pub dockerfile: &'a Dockerfile<'a>,
   pub text: &'a str,
@@ -27,8 +29,9 @@ pub struct Context<'a> {
 }
 
 impl<'a> Context<'a> {
-  pub fn new(text: &'a str, dockerfile: &'a Dockerfile<'a>, config: &'a Configuration) -> Self {
+  pub fn new(arena: &'a Arena, text: &'a str, dockerfile: &'a Dockerfile<'a>, config: &'a Configuration) -> Self {
     Self {
+      arena,
       config,
       text,
       dockerfile,

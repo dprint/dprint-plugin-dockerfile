@@ -1,4 +1,6 @@
 use dprint_core::configuration::resolve_new_line_kind;
+use dprint_core::formatting::Arena;
+use dprint_core::formatting::ArenaPool;
 use dprint_core::formatting::PrintOptions;
 use std::path::Path;
 
@@ -7,26 +9,38 @@ use crate::configuration::Configuration;
 use crate::error::FormatError;
 use crate::generation::generate;
 
-pub fn format_text(_file_path: &Path, text: &str, config: &Configuration) -> Result<Option<String>, FormatError> {
-  let result = format_inner(text, config)?;
+pub fn format_text(file_path: &Path, text: &str, config: &Configuration) -> Result<Option<String>, FormatError> {
+  format_text_with_arena_pool(file_path, text, config, None)
+}
+
+/// Formats the text, creating the arena from the pool when one is provided so
+/// its memory is reused between formats.
+pub(crate) fn format_text_with_arena_pool(
+  _file_path: &Path,
+  text: &str,
+  config: &Configuration,
+  arena_pool: Option<&ArenaPool>,
+) -> Result<Option<String>, FormatError> {
+  let result = format_inner(text, config, arena_pool)?;
   if result == text { Ok(None) } else { Ok(Some(result)) }
 }
 
-fn format_inner(text: &str, config: &Configuration) -> Result<String, FormatError> {
+fn format_inner(text: &str, config: &Configuration, arena_pool: Option<&ArenaPool>) -> Result<String, FormatError> {
   let text = strip_bom(text);
   let node = parse_node(text)?;
+  let arena = create_arena(arena_pool);
+  let print_items = generate(&arena, &node, text, config);
 
-  Ok(dprint_core::formatting::format(
-    || generate(&node, text, config),
-    config_to_print_options(text, config),
-  ))
+  Ok(dprint_core::formatting::print(print_items, config_to_print_options(text, config)))
 }
 
 #[cfg(feature = "tracing")]
 pub fn trace_file(_file_path: &Path, text: &str, config: &Configuration) -> dprint_core::formatting::TracingResult {
   let node = parse_node(text).unwrap();
+  let arena = Arena::new();
+  let print_items = generate(&arena, &node, text, config);
 
-  dprint_core::formatting::trace_printing(|| generate(&node, text, config), config_to_print_options(text, config))
+  dprint_core::formatting::trace_printing(print_items, config_to_print_options(text, config))
 }
 
 pub(crate) fn parse_node(text: &str) -> Result<Dockerfile<'_>, FormatError> {
@@ -35,6 +49,13 @@ pub(crate) fn parse_node(text: &str) -> Result<Dockerfile<'_>, FormatError> {
 
 pub(crate) fn strip_bom(text: &str) -> &str {
   text.strip_prefix("\u{FEFF}").unwrap_or(text)
+}
+
+pub(crate) fn create_arena(arena_pool: Option<&ArenaPool>) -> Arena {
+  match arena_pool {
+    Some(arena_pool) => arena_pool.create_arena(),
+    None => Arena::new(),
+  }
 }
 
 pub(crate) fn config_to_print_options(text: &str, config: &Configuration) -> PrintOptions {
