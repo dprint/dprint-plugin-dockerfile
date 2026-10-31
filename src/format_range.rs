@@ -11,6 +11,7 @@ use crate::configuration::Configuration;
 use crate::error::FormatError;
 use crate::format_text::config_to_print_options;
 use crate::format_text::create_arena;
+use crate::format_text::format_file;
 use crate::format_text::format_text_with_arena_pool;
 use crate::format_text::parse_node;
 use crate::format_text::strip_bom;
@@ -51,16 +52,20 @@ pub(crate) fn format_text_range_with_arena_pool(
     return format_text_with_arena_pool(file_path, text, config, arena_pool);
   }
 
-  let file = parse_node(body)?;
-  let nodes = top_level_nodes(&file, body);
-  let indexes = match find_target(&nodes, &file, &range) {
-    Target::File => return format_text_with_arena_pool(file_path, text, config, arena_pool),
+  // the parsed file and the print items share the arena
+  let arena = create_arena(arena_pool);
+  let file = parse_node(body, arena.bump())?;
+  let nodes = top_level_nodes(&arena, &file, body);
+  let indexes = match find_target(nodes, &file, &range) {
+    Target::File => {
+      let result = format_file(&arena, &file, body, config);
+      return Ok(if result == text { None } else { Some(result) });
+    }
     Target::Nothing => return Ok(None),
     Target::Nodes(indexes) => indexes,
   };
   let replaced = line_start(&file, nodes[indexes.start].span().start)..line_end(&file, nodes[indexes.end - 1].span().end);
-  let arena = create_arena(arena_pool);
-  let print_items = generate_nodes(&arena, &nodes, indexes, &file, body, config);
+  let print_items = generate_nodes(&arena, nodes, indexes, &file, body, config);
   let formatted = dprint_core::formatting::print(
     print_items,
     PrintOptions {

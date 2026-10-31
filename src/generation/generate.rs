@@ -1,3 +1,4 @@
+use dprint_core::formatting::bumpalo::collections::Vec as BumpVec;
 use dprint_core::formatting::ir_helpers::SingleLineOptions;
 use dprint_core::formatting::ir_helpers::gen_from_raw_string;
 use dprint_core::formatting::*;
@@ -10,8 +11,8 @@ use crate::ast::*;
 use crate::configuration::Configuration;
 
 pub fn generate<'a>(arena: &'a Arena, file: &'a Dockerfile<'a>, text: &'a str, config: &'a Configuration) -> PrintItems<'a> {
-  let nodes = top_level_nodes(file, text);
-  let mut items = generate_nodes(arena, &nodes, 0..nodes.len(), file, text, config);
+  let nodes = top_level_nodes(arena, file, text);
+  let mut items = generate_nodes(arena, nodes, 0..nodes.len(), file, text, config);
   if !nodes.is_empty() {
     items.push_signal(Signal::NewLine);
   }
@@ -19,8 +20,8 @@ pub fn generate<'a>(arena: &'a Arena, file: &'a Dockerfile<'a>, text: &'a str, c
 }
 
 /// The instructions of the file along with the comments between them.
-pub fn top_level_nodes<'a>(file: &'a Dockerfile<'a>, text: &'a str) -> Vec<Node<'a>> {
-  nodes_with_comments(text, 0, text.len(), true, file.instructions.iter().map(|i| i.into()))
+pub fn top_level_nodes<'a>(arena: &'a Arena, file: &'a Dockerfile<'a>, text: &'a str) -> &'a [Node<'a>] {
+  nodes_with_comments(arena.bump(), text, 0, text.len(), true, file.instructions.iter().map(|i| i.into())).into_bump_slice()
 }
 
 /// Generates the top-level nodes at the provided indexes as they're written
@@ -189,7 +190,7 @@ fn gen_copy_instruction<'a>(node: &'a CopyInstruction<'a>, context: &mut Context
 
   match &node.args {
     CopyArgs::Exec(array) => {
-      for flag in &node.flags {
+      for flag in node.flags {
         items.extend(gen_node(flag.into(), context));
         items.push_sc(sc!(" "));
       }
@@ -251,7 +252,7 @@ fn gen_env_var<'a>(node: &'a EnvVar<'a>, context: &mut Context<'a>) -> PrintItem
 fn gen_from_instruction<'a>(node: &'a FromInstruction<'a>, context: &mut Context<'a>) -> PrintItems<'a> {
   let mut items = PrintItems::new(context.arena);
   items.push_sc(sc!("FROM "));
-  for flag in &node.flags {
+  for flag in node.flags {
     items.extend(gen_node(flag.into(), context));
     items.push_sc(sc!(" "));
   }
@@ -290,7 +291,7 @@ fn gen_label<'a>(node: &'a Label<'a>, context: &mut Context<'a>) -> PrintItems<'
   items
 }
 
-fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &mut Context<'a>) -> PrintItems<'a> {
+fn gen_multi_line_items<'a>(nodes: BumpVec<'a, Node<'a>>, indent_width: u32, context: &mut Context<'a>) -> PrintItems<'a> {
   let count = nodes.len();
   let dockerfile = context.dockerfile;
   let line_index = move |node: &Node| dockerfile.line_index(node.span().start);
@@ -379,7 +380,7 @@ fn gen_shell_instruction<'a>(node: &'a ShellInstruction<'a>, context: &mut Conte
 fn gen_onbuild_instruction<'a>(node: &'a OnbuildInstruction<'a>, context: &mut Context<'a>) -> PrintItems<'a> {
   let mut items = PrintItems::new(context.arena);
   items.push_sc(sc!("ONBUILD "));
-  items.extend(gen_node((&*node.instruction).into(), context));
+  items.extend(gen_node(node.instruction.into(), context));
   items
 }
 
@@ -394,14 +395,14 @@ fn gen_healthcheck_instruction<'a>(node: &'a HealthcheckInstruction<'a>, context
   // the options render inline as the group's first value, each with a leading
   // space so they separate from the keyword (an empty value when there are none)
   let mut flags_items = PrintItems::new(context.arena);
-  for flag in &node.flags {
+  for flag in node.flags {
     flags_items.push_sc(sc!(" --"));
     flags_items.extend(gen_node((&flag.name).into(), context));
     flags_items.push_sc(sc!("="));
     flags_items.extend(gen_node((&flag.value).into(), context));
   }
   let command_items = match &node.cmd {
-    Some(instruction) => gen_node((&**instruction).into(), context),
+    Some(instruction) => gen_node((*instruction).into(), context),
     None => {
       let mut none = PrintItems::new(context.arena);
       none.push_sc(sc!("NONE"));
@@ -493,7 +494,7 @@ fn gen_grouped_values<'a>(values: Vec<(PrintItems<'a>, usize)>, indent_width: u3
 fn gen_heredoc_instruction<'a>(node: &'a HeredocInstruction<'a>, context: &mut Context<'a>) -> PrintItems<'a> {
   let mut items = PrintItems::new(context.arena);
   // the first line is a normal instruction and is formatted as such
-  items.extend(gen_node((&*node.instruction).into(), context));
+  items.extend(gen_node(node.instruction.into(), context));
   // the heredoc body and its closing delimiter(s) are preserved verbatim: the
   // delimiter only closes the heredoc when it matches exactly, so the printer
   // must never indent these lines (`gen_from_raw_string` only ignores the
@@ -564,7 +565,7 @@ fn gen_breakable_string<'a>(node: &'a BreakableString<'a>, context: &mut Context
     // comments lose their leading whitespace when parsed, so align them
     // with the surrounding arguments by reusing their indentation
     if matches!(component, BreakableStringComponent::Comment(_)) {
-      let indentation = dedent(comment_indentation(&node.components, i), context.dedent_width);
+      let indentation = dedent(comment_indentation(node.components, i), context.dedent_width);
       if !indentation.is_empty() {
         // via gen_from_raw_string so a tab indent becomes a Tab signal
         items.extend(gen_from_raw_string(context.arena, indentation));
@@ -633,7 +634,7 @@ fn gen_string<'a>(node: &'a SpannedString<'a>, context: &mut Context<'a>) -> Pri
   let mut items = PrintItems::new(context.arena);
   if context.gen_string_content {
     // don't trim this because it's the content
-    items.extend(gen_from_raw_string(context.arena, &node.content));
+    items.extend(gen_from_raw_string(context.arena, node.content));
     return items;
   }
 
@@ -780,7 +781,7 @@ fn recover_dropped_comments<'a>(node: &Node<'a>, context: &mut Context<'a>) -> P
   };
   let comments = {
     let interior = &context.text[span.start..span.end];
-    parse_comments(interior, span.start)
+    parse_comments(context.arena.bump(), interior, span.start)
   };
   for comment in comments {
     if !context.handled_comments.contains(&comment.span.start) {

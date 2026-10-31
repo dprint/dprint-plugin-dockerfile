@@ -1,4 +1,5 @@
 use dprint_core::formatting::Arena;
+use dprint_core::formatting::bumpalo::collections::Vec as BumpVec;
 use std::collections::HashSet;
 
 use crate::ast::Dockerfile;
@@ -71,7 +72,13 @@ impl<'a> Context<'a> {
 
   /// Interleaves the given nodes with the comments found in the text between
   /// them. See [`nodes_with_comments`].
-  pub fn gen_nodes_with_comments(&mut self, start_pos: usize, end_pos: usize, include_leading: bool, nodes: impl Iterator<Item = Node<'a>>) -> Vec<Node<'a>> {
-    nodes_with_comments(self.text, start_pos, end_pos, include_leading, nodes)
+  pub fn gen_nodes_with_comments(
+    &mut self,
+    start_pos: usize,
+    end_pos: usize,
+    include_leading: bool,
+    nodes: impl Iterator<Item = Node<'a>>,
+  ) -> BumpVec<'a, Node<'a>> {
+    nodes_with_comments(self.arena.bump(), self.text, start_pos, end_pos, include_leading, nodes)
   }
 }

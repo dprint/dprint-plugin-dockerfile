@@ -1,3 +1,6 @@
+use dprint_core::formatting::bumpalo::Bump;
+use dprint_core::formatting::bumpalo::collections::Vec as BumpVec;
+
 use crate::ast::*;
 
 macro_rules! create_node_ref {
@@ -45,6 +48,9 @@ create_node_ref!(
   Comment(SpannedComment),
 );
 
+// nodes are kept in the arena, which never runs destructors
+const _: () = assert!(!std::mem::needs_drop::<Node<'static>>());
+
 impl Node<'_> {
   pub fn span(&self) -> Span {
     use Node::*;
@@ -88,15 +94,22 @@ impl Node<'_> {
 /// node are skipped so they don't end up on the instruction's prefix line; the
 /// formatter's safety net recovers those onto their own lines instead. The
 /// top-level call uses `true` so file-leading comments are kept.
-pub fn nodes_with_comments<'a>(text: &'a str, start_pos: usize, end_pos: usize, include_leading: bool, nodes: impl Iterator<Item = Node<'a>>) -> Vec<Node<'a>> {
+pub fn nodes_with_comments<'a>(
+  bump: &'a Bump,
+  text: &'a str,
+  start_pos: usize,
+  end_pos: usize,
+  include_leading: bool,
+  nodes: impl Iterator<Item = Node<'a>>,
+) -> BumpVec<'a, Node<'a>> {
   // at least one for each node, along with the comments between them
-  let mut result = Vec::with_capacity(nodes.size_hint().0);
+  let mut result = BumpVec::with_capacity_in(nodes.size_hint().0, bump);
   let mut last_pos = start_pos;
   let mut is_first = true;
   for node in nodes {
     if !is_first || include_leading {
       let text = &text[last_pos..node.span().start];
-      for comment in parse_comments(text, last_pos) {
+      for comment in parse_comments(bump, text, last_pos) {
         result.push(Node::OwnedComment(comment));
       }
     }
@@ -106,14 +119,14 @@ pub fn nodes_with_comments<'a>(text: &'a str, start_pos: usize, end_pos: usize, 
     is_first = false;
   }
   let text = &text[last_pos..end_pos];
-  for comment in parse_comments(text, last_pos) {
+  for comment in parse_comments(bump, text, last_pos) {
     result.push(Node::OwnedComment(comment));
   }
   result
 }
 
-pub fn parse_comments(text: &str, offset: usize) -> Vec<SpannedComment<'_>> {
-  let mut comments = Vec::new();
+pub fn parse_comments<'a>(bump: &'a Bump, text: &'a str, offset: usize) -> BumpVec<'a, SpannedComment<'a>> {
+  let mut comments = BumpVec::new_in(bump);
   let mut char_iterator = text.char_indices();
   let mut in_start_comment_context = true;
 
