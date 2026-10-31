@@ -89,7 +89,8 @@ impl Node<'_> {
 /// formatter's safety net recovers those onto their own lines instead. The
 /// top-level call uses `true` so file-leading comments are kept.
 pub fn nodes_with_comments<'a>(text: &'a str, start_pos: usize, end_pos: usize, include_leading: bool, nodes: impl Iterator<Item = Node<'a>>) -> Vec<Node<'a>> {
-  let mut result = Vec::new();
+  // at least one for each node, along with the comments between them
+  let mut result = Vec::with_capacity(nodes.size_hint().0);
   let mut last_pos = start_pos;
   let mut is_first = true;
   for node in nodes {
