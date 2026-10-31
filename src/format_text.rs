@@ -2,6 +2,7 @@ use dprint_core::configuration::resolve_new_line_kind;
 use dprint_core::formatting::Arena;
 use dprint_core::formatting::ArenaPool;
 use dprint_core::formatting::PrintOptions;
+use dprint_core::formatting::bumpalo::Bump;
 use std::path::Path;
 
 use crate::ast::Dockerfile;
@@ -27,24 +28,30 @@ pub(crate) fn format_text_with_arena_pool(
 
 fn format_inner(text: &str, config: &Configuration, arena_pool: Option<&ArenaPool>) -> Result<String, FormatError> {
   let text = strip_bom(text);
-  let node = parse_node(text)?;
+  // the parsed file and the print items share the arena
   let arena = create_arena(arena_pool);
-  let print_items = generate(&arena, &node, text, config);
+  let file = parse_node(text, arena.bump())?;
 
-  Ok(dprint_core::formatting::print(print_items, config_to_print_options(text, config)))
+  Ok(format_file(&arena, &file, text, config))
+}
+
+/// Formats the whole of an already parsed file.
+pub(crate) fn format_file<'a>(arena: &'a Arena, file: &'a Dockerfile<'a>, text: &'a str, config: &'a Configuration) -> String {
+  let print_items = generate(arena, file, text, config);
+  dprint_core::formatting::print(print_items, config_to_print_options(text, config))
 }
 
 #[cfg(feature = "tracing")]
 pub fn trace_file(_file_path: &Path, text: &str, config: &Configuration) -> dprint_core::formatting::TracingResult {
-  let node = parse_node(text).unwrap();
   let arena = Arena::new();
+  let node = parse_node(text, arena.bump()).unwrap();
   let print_items = generate(&arena, &node, text, config);
 
   dprint_core::formatting::trace_printing(print_items, config_to_print_options(text, config))
 }
 
-pub(crate) fn parse_node(text: &str) -> Result<Dockerfile<'_>, FormatError> {
-  Ok(Dockerfile::parse(text)?)
+pub(crate) fn parse_node<'a>(text: &'a str, bump: &'a Bump) -> Result<Dockerfile<'a>, FormatError> {
+  Ok(Dockerfile::parse(text, bump)?)
 }
 
 pub(crate) fn strip_bom(text: &str) -> &str {

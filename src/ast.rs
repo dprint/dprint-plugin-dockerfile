@@ -2,10 +2,13 @@
 //
 // These mirror the subset of the `dockerfile-parser` crate's public types that
 // the formatter relies on. They are produced by [`crate::parser`] and borrow
-// from the original Dockerfile text, so parsing only allocates for the few
-// strings whose content differs from the source (escaped or quoted values).
+// from the original Dockerfile text and the arena the file was parsed into.
+// The lists and the few strings whose content differs from the source
+// (escaped or quoted values) are allocated in the arena, so nothing here owns
+// heap memory.
 
-use std::borrow::Cow;
+use dprint_core::formatting::bumpalo::Bump;
+use dprint_core::formatting::bumpalo::collections::Vec as BumpVec;
 
 /// A byte-index range into the original Dockerfile text.
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Ord, PartialOrd)]
@@ -32,28 +35,33 @@ pub struct Dockerfile<'a> {
   /// The raw content of the Dockerfile.
   pub content: &'a str,
   /// An ordered list of all parsed instructions.
-  pub instructions: Vec<Instruction<'a>>,
+  pub instructions: &'a [Instruction<'a>],
   /// The line-continuation / escape character, from a `# escape=` directive
   /// (`\` by default).
   pub escape: char,
   /// The byte offset each line of `content` starts at, in ascending order and
   /// always beginning with `0`. Kept private because it is derived from
   /// `content` and must not fall out of sync with it.
-  line_starts: Vec<usize>,
+  line_starts: &'a [usize],
 }
 
+// nothing in the tree may own heap memory since the arena never runs destructors
+const _: () = assert!(!std::mem::needs_drop::<Dockerfile<'static>>());
+const _: () = assert!(!std::mem::needs_drop::<Instruction<'static>>());
+
 impl<'a> Dockerfile<'a> {
-  /// Parses a Dockerfile from a string.
-  pub fn parse(input: &'a str) -> Result<Dockerfile<'a>, monch::ParseErrorFailureError> {
-    crate::parser::parse(input)
+  /// Parses a Dockerfile from a string, allocating the tree in the provided
+  /// arena (ex. `Arena::bump()`).
+  pub fn parse(input: &'a str, bump: &'a Bump) -> Result<Dockerfile<'a>, monch::ParseErrorFailureError> {
+    crate::parser::parse(input, bump)
   }
 
-  pub fn new(content: &'a str, instructions: Vec<Instruction<'a>>, escape: char) -> Dockerfile<'a> {
+  pub fn new(content: &'a str, instructions: &'a [Instruction<'a>], escape: char, bump: &'a Bump) -> Dockerfile<'a> {
     Dockerfile {
       content,
       instructions,
       escape,
-      line_starts: line_starts(content),
+      line_starts: line_starts(content, bump),
     }
   }
 
@@ -77,10 +85,11 @@ impl<'a> Dockerfile<'a> {
 
 /// The byte offset each line of `content` starts at. A `\r\n` line ending is
 /// covered by its `\n`, so both line ending styles are handled.
-fn line_starts(content: &str) -> Vec<usize> {
-  let mut starts = vec![0];
+fn line_starts<'a>(content: &str, bump: &'a Bump) -> &'a [usize] {
+  let mut starts = BumpVec::new_in(bump);
+  starts.push(0);
   starts.extend(content.bytes().enumerate().filter(|(_, b)| *b == b'\n').map(|(i, _)| i + 1));
-  starts
+  starts.into_bump_slice()
 }
 
 /// A single Dockerfile instruction.
@@ -128,11 +137,11 @@ impl Instruction<'_> {
 /// A string with a character span.
 ///
 /// The content borrows from the original text unless the parser had to resolve
-/// escape sequences or strip quotes, in which case it is owned.
+/// escape sequences, in which case it is allocated in the arena.
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct SpannedString<'a> {
   pub span: Span,
-  pub content: Cow<'a, str>,
+  pub content: &'a str,
 }
 
 /// A comment with a character span.
@@ -146,7 +155,7 @@ pub struct SpannedComment<'a> {
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct StringArray<'a> {
   pub span: Span,
-  pub elements: Vec<SpannedString<'a>>,
+  pub elements: &'a [SpannedString<'a>],
 }
 
 /// A component of a breakable string.
@@ -161,7 +170,7 @@ pub enum BreakableStringComponent<'a> {
 #[derive(Debug, Eq, PartialEq, Ord, PartialOrd, Clone)]
 pub struct BreakableString<'a> {
   pub span: Span,
-  pub components: Vec<BreakableStringComponent<'a>>,
+  pub components: &'a [BreakableStringComponent<'a>],
 }
 
 /// A string that is either in shell form or exec form (`["a", "b"]`).
@@ -175,7 +184,7 @@ pub enum ShellOrExecExpr<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FromInstruction<'a> {
   pub span: Span,
-  pub flags: Vec<FromFlag<'a>>,
+  pub flags: &'a [FromFlag<'a>],
   pub image: SpannedString<'a>,
   pub alias: Option<SpannedString<'a>>,
 }
@@ -200,7 +209,7 @@ pub struct ArgInstruction<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct LabelInstruction<'a> {
   pub span: Span,
-  pub labels: Vec<Label<'a>>,
+  pub labels: &'a [Label<'a>],
 }
 
 /// A single label key/value pair.
@@ -236,7 +245,7 @@ pub struct CmdInstruction<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CopyInstruction<'a> {
   pub span: Span,
-  pub flags: Vec<CopyFlag<'a>>,
+  pub flags: &'a [CopyFlag<'a>],
   pub args: CopyArgs<'a>,
 }
 
@@ -245,7 +254,7 @@ pub struct CopyInstruction<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CopyArgs<'a> {
   Paths {
-    sources: Vec<SpannedString<'a>>,
+    sources: &'a [SpannedString<'a>],
     destination: SpannedString<'a>,
   },
   Exec(StringArray<'a>),
@@ -263,7 +272,7 @@ pub struct CopyFlag<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct EnvInstruction<'a> {
   pub span: Span,
-  pub vars: Vec<EnvVar<'a>>,
+  pub vars: &'a [EnvVar<'a>],
 }
 
 /// An environment variable key/value pair.
@@ -286,7 +295,7 @@ pub struct ShellInstruction<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct OnbuildInstruction<'a> {
   pub span: Span,
-  pub instruction: Box<Instruction<'a>>,
+  pub instruction: &'a Instruction<'a>,
 }
 
 /// A Dockerfile `HEALTHCHECK` instruction.
@@ -296,8 +305,8 @@ pub struct OnbuildInstruction<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct HealthcheckInstruction<'a> {
   pub span: Span,
-  pub flags: Vec<HealthcheckFlag<'a>>,
-  pub cmd: Option<Box<Instruction<'a>>>,
+  pub flags: &'a [HealthcheckFlag<'a>],
+  pub cmd: Option<&'a Instruction<'a>>,
 }
 
 /// A key/value option passed to a `HEALTHCHECK` instruction, e.g.
@@ -325,7 +334,7 @@ pub struct HealthcheckFlag<'a> {
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct HeredocInstruction<'a> {
   pub span: Span,
-  pub instruction: Box<Instruction<'a>>,
+  pub instruction: &'a Instruction<'a>,
   pub body: &'a str,
 }
 
@@ -346,7 +355,8 @@ mod test {
 
   #[test]
   fn resolves_line_indexes() {
-    let file = Dockerfile::new("FROM a\nRUN b\n\nCMD c", Vec::new(), '\\');
+    let bump = Bump::new();
+    let file = Dockerfile::new("FROM a\nRUN b\n\nCMD c", &[], '\\', &bump);
     // the start of a line, a position within it, and its own newline all
     // resolve to that line; the blank line 2 is just the newline at 13
     let cases = [(0, 0), (3, 0), (6, 0), (7, 1), (11, 1), (12, 1), (13, 2), (14, 3), (18, 3)];
@@ -361,7 +371,8 @@ mod test {
   #[test]
   fn resolves_line_indexes_with_carriage_returns() {
     // the `\r` of a `\r\n` ending is still part of the line it terminates
-    let file = Dockerfile::new("FROM a\r\nRUN b\r\n", Vec::new(), '\\');
+    let bump = Bump::new();
+    let file = Dockerfile::new("FROM a\r\nRUN b\r\n", &[], '\\', &bump);
     assert_eq!(file.line_index(6), 0);
     assert_eq!(file.line_index(7), 0);
     assert_eq!(file.line_index(8), 1);
@@ -370,7 +381,8 @@ mod test {
 
   #[test]
   fn resolves_line_indexes_in_empty_text() {
-    let file = Dockerfile::new("", Vec::new(), '\\');
+    let bump = Bump::new();
+    let file = Dockerfile::new("", &[], '\\', &bump);
     assert_eq!(file.line_index(0), 0);
     assert_eq!(file.line_start(0), 0);
   }

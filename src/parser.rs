@@ -3,22 +3,23 @@
 // The parser closely follows the grammar of the `dockerfile-parser` crate so
 // that the formatter can rely on the same spans and structure. Byte spans are
 // recovered from `&str` subslices via pointer arithmetic against the original
-// input (see [`Parser::off`]).
+// input (see [`Parser::off`]). The tree is allocated in the provided arena.
 
-use std::borrow::Cow;
-
+use dprint_core::formatting::bumpalo::Bump;
+use dprint_core::formatting::bumpalo::collections::String as BumpString;
+use dprint_core::formatting::bumpalo::collections::Vec as BumpVec;
 use monch::*;
 
 use crate::ast::*;
 
 type PResult<'a, T> = Result<(&'a str, T), ParseErrorFailureError>;
 
-/// Parses a Dockerfile from a string.
-pub fn parse(text: &str) -> Result<Dockerfile<'_>, ParseErrorFailureError> {
+/// Parses a Dockerfile from a string, allocating the tree in the arena.
+pub fn parse<'a>(text: &'a str, bump: &'a Bump) -> Result<Dockerfile<'a>, ParseErrorFailureError> {
   let escape = detect_escape(text);
-  let parser = Parser { base: text, escape };
+  let parser = Parser { base: text, escape, bump };
   let instructions = parser.parse_dockerfile(text)?;
-  Ok(Dockerfile::new(text, instructions, escape))
+  Ok(Dockerfile::new(text, instructions, escape, bump))
 }
 
 /// Determines the escape character from a leading `# escape=` parser directive,
@@ -33,11 +34,13 @@ fn detect_escape(text: &str) -> char {
     let Some((name, value)) = directive.split_once('=') else {
       break; // a regular comment ends the directive section
     };
-    match name.trim().to_ascii_lowercase().as_str() {
-      "escape" => return if value.trim() == "`" { '`' } else { '\\' },
-      "syntax" => continue, // another directive — keep looking
-      _ => break,           // unknown directive is treated as a comment
+    let name = name.trim();
+    if name.eq_ignore_ascii_case("escape") {
+      return if value.trim() == "`" { '`' } else { '\\' };
+    } else if !name.eq_ignore_ascii_case("syntax") {
+      break; // unknown directive is treated as a comment
     }
+    // otherwise another directive — keep looking
   }
   '\\'
 }
@@ -63,11 +66,13 @@ struct Parser<'a> {
   /// the line-continuation / escape character (`\` by default, `` ` `` under a
   /// `# escape=` directive)
   escape: char,
+  /// the arena the tree is allocated in
+  bump: &'a Bump,
 }
 
 impl<'a> Parser<'a> {
-  fn parse_dockerfile(&self, mut input: &'a str) -> Result<Vec<Instruction<'a>>, ParseErrorFailureError> {
-    let mut instructions = Vec::new();
+  fn parse_dockerfile(&self, mut input: &'a str) -> Result<&'a [Instruction<'a>], ParseErrorFailureError> {
+    let mut instructions = BumpVec::new_in(self.bump);
     loop {
       // a meta step starts with optional insignificant whitespace
       let after_ws = skip_ws(input);
@@ -107,13 +112,12 @@ impl<'a> Parser<'a> {
         }
       }
     }
-    Ok(instructions)
+    Ok(instructions.into_bump_slice())
   }
 
   fn parse_instruction(&self, input: &'a str) -> PResult<'a, Instruction<'a>> {
     let (after_kw, keyword) = alpha0(input);
-    let lower = keyword.to_ascii_lowercase();
-    if KEYWORDS.contains(&lower.as_str()) {
+    if let Some(lower) = KEYWORDS.iter().find(|k| k.eq_ignore_ascii_case(keyword)) {
       // a known keyword is only honored if followed by argument whitespace,
       // otherwise it falls through to a misc instruction (matching the grammar)
       if let Some(after_arg_ws) = self.arg_ws(after_kw) {
@@ -121,7 +125,7 @@ impl<'a> Parser<'a> {
         // shell-form instructions keep a leading comment in their breakable
         // string rather than discarding it (see #12)
         let shell_start = self.arg_ws_keep_comments(after_kw).unwrap_or(after_arg_ws);
-        return match lower.as_str() {
+        return match *lower {
           "from" => self.parse_from(after_arg_ws, start),
           "run" => self.parse_shell_or_exec(shell_start, start, ExprKind::Run),
           "cmd" => self.parse_shell_or_exec(shell_start, start, ExprKind::Cmd),
@@ -143,7 +147,7 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_from(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
-    let mut flags = Vec::new();
+    let mut flags = BumpVec::new_in(self.bump);
     let mut input = input;
 
     // (arg_ws ~ from_flag)* — the first arg_ws was already consumed before the
@@ -168,6 +172,7 @@ impl<'a> Parser<'a> {
     }
 
     let span = Span::new(start, self.off(end));
+    let flags = flags.into_bump_slice();
     Ok((end, Instruction::From(FromInstruction { span, flags, image, alias })))
   }
 
@@ -237,8 +242,8 @@ impl<'a> Parser<'a> {
   }
 
   fn parse_copy(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
-    let mut flags = Vec::new();
-    let mut paths: Vec<SpannedString<'a>> = Vec::new();
+    let mut flags = BumpVec::new_in(self.bump);
+    let mut paths: BumpVec<'a, SpannedString<'a>> = BumpVec::new_in(self.bump);
     let mut input = input;
 
     // (arg_ws ~ copy_flag)*
@@ -263,7 +268,7 @@ impl<'a> Parser<'a> {
         rest,
         Instruction::Copy(CopyInstruction {
           span,
-          flags,
+          flags: flags.into_bump_slice(),
           args: CopyArgs::Exec(array),
         }),
       ));
@@ -289,14 +294,17 @@ impl<'a> Parser<'a> {
       input,
       Instruction::Copy(CopyInstruction {
         span,
-        flags,
-        args: CopyArgs::Paths { sources: paths, destination },
+        flags: flags.into_bump_slice(),
+        args: CopyArgs::Paths {
+          sources: paths.into_bump_slice(),
+          destination,
+        },
       }),
     ))
   }
 
   fn parse_label(&self, after_kw: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
-    let mut labels = Vec::new();
+    let mut labels = BumpVec::new_in(self.bump);
     let input;
 
     if let Some((rest, label)) = self.label_single(after_kw) {
@@ -325,6 +333,7 @@ impl<'a> Parser<'a> {
 
     let end = labels.last().unwrap().span.end;
     let span = Span::new(start, end);
+    let labels = labels.into_bump_slice();
     Ok((input, Instruction::Label(LabelInstruction { span, labels })))
   }
 
@@ -370,11 +379,12 @@ impl<'a> Parser<'a> {
   fn parse_env(&self, after_kw: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
     if let Some((rest, var)) = self.env_single(after_kw) {
       let span = Span::new(start, var.span.end);
-      return Ok((rest, Instruction::Env(EnvInstruction { span, vars: vec![var] })));
+      let vars = std::slice::from_ref(self.bump.alloc(var));
+      return Ok((rest, Instruction::Env(EnvInstruction { span, vars })));
     }
 
     // env_pairs = (arg_ws ~ env_pair?)+
-    let mut vars = Vec::new();
+    let mut vars = BumpVec::new_in(self.bump);
     let mut input = after_kw;
     while let Some(after_ws) = self.arg_ws(input) {
       match self.env_pair(after_ws) {
@@ -392,6 +402,7 @@ impl<'a> Parser<'a> {
       return Err(fail("env requires a key/value pair"));
     }
     let span = Span::new(start, vars.last().unwrap().span.end);
+    let vars = vars.into_bump_slice();
     Ok((input, Instruction::Env(EnvInstruction { span, vars })))
   }
 
@@ -404,7 +415,7 @@ impl<'a> Parser<'a> {
     let after_ws = self.arg_ws(after_name)?;
     let (rest, value) = if starts_with_quote(after_ws) {
       let (rest, s) = self.parse_quoted_string(after_ws).ok()?;
-      (rest, breakable_from_string(s))
+      (rest, self.breakable_from_string(s))
     } else {
       self.any_breakable(after_ws).ok()?
     };
@@ -417,10 +428,10 @@ impl<'a> Parser<'a> {
     let after_eq = after_name.strip_prefix('=')?;
     let (rest, value) = if starts_with_quote(after_eq) {
       let (rest, s) = self.parse_quoted_string(after_eq).ok()?;
-      (rest, breakable_from_string(s))
+      (rest, self.breakable_from_string(s))
     } else {
       let (rest, value) = self.env_value(after_eq)?;
-      (rest, breakable_from_string(value))
+      (rest, self.breakable_from_string(value))
     };
     let span = Span::new(key.span.start, value.span.end);
     Some((rest, EnvVar { span, key, value }))
@@ -456,7 +467,7 @@ impl<'a> Parser<'a> {
       rest,
       SpannedString {
         span: self.span(input, rest),
-        content: unescape(raw, self.escape),
+        content: unescape(self.bump, raw, self.escape),
       },
     ))
   }
@@ -474,13 +485,13 @@ impl<'a> Parser<'a> {
       rest,
       Instruction::Onbuild(OnbuildInstruction {
         span,
-        instruction: Box::new(inner),
+        instruction: self.bump.alloc(inner),
       }),
     ))
   }
 
   fn parse_healthcheck(&self, input: &'a str, start: usize) -> PResult<'a, Instruction<'a>> {
-    let mut flags = Vec::new();
+    let mut flags = BumpVec::new_in(self.bump);
     let mut input = input;
     // [OPTIONS] — the first arg_ws was consumed before the first token
     while let Some((rest, name, value, span)) = self.parse_flag_with(input, |c| c.is_ascii_alphanumeric() || c == '-') {
@@ -493,6 +504,8 @@ impl<'a> Parser<'a> {
         }
       }
     }
+
+    let flags = flags.into_bump_slice();
 
     // the `NONE` form has no nested instruction
     if let Some(after) = strip_prefix_ci(input, "none")
@@ -510,7 +523,7 @@ impl<'a> Parser<'a> {
       Instruction::Healthcheck(HealthcheckInstruction {
         span,
         flags,
-        cmd: Some(Box::new(inner)),
+        cmd: Some(self.bump.alloc(inner)),
       }),
     ))
   }
@@ -573,7 +586,7 @@ impl<'a> Parser<'a> {
       return Err(fail("unterminated quoted string"));
     };
     let rest = &input[end..];
-    let content = unquote(&input[..end]);
+    let content = unquote(self.bump, &input[..end]);
     Ok((rest, self.spanned(input, rest, content)))
   }
 
@@ -582,14 +595,14 @@ impl<'a> Parser<'a> {
   fn string_array(&self, input: &'a str) -> PResult<'a, StringArray<'a>> {
     let start = input.strip_prefix('[').ok_or_else(|| fail("expected ["))?;
     let mut s = self.arg_ws_maybe(start);
-    let mut elements = Vec::new();
+    let mut elements = BumpVec::new_in(self.bump);
 
     if let Some(rest) = s.strip_prefix(']') {
       return Ok((
         rest,
         StringArray {
           span: Span::new(self.off(input), self.off(rest)),
-          elements,
+          elements: &[],
         },
       ));
     }
@@ -619,7 +632,7 @@ impl<'a> Parser<'a> {
       rest,
       StringArray {
         span: Span::new(self.off(input), self.off(rest)),
-        elements,
+        elements: elements.into_bump_slice(),
       },
     ))
   }
@@ -627,7 +640,7 @@ impl<'a> Parser<'a> {
   /// Parses a breakable string: content split across lines by `\` line
   /// continuations and interspersed with comment lines.
   fn any_breakable(&self, input: &'a str) -> PResult<'a, BreakableString<'a>> {
-    let mut components: Vec<BreakableStringComponent<'a>> = Vec::new();
+    let mut components: BumpVec<'a, BreakableStringComponent<'a>> = BumpVec::new_in(self.bump);
     let mut s = input;
     loop {
       let after_ws = skip_ws(s);
@@ -654,7 +667,7 @@ impl<'a> Parser<'a> {
         break;
       }
       let span = self.span(s, after_content);
-      components.push(BreakableStringComponent::String(SpannedString { span, content: content.into() }));
+      components.push(BreakableStringComponent::String(SpannedString { span, content }));
       s = after_content;
       match line_continuation(s, self.escape) {
         Some(rest) => {
@@ -672,6 +685,7 @@ impl<'a> Parser<'a> {
     }
     let end = component_end(components.last().unwrap());
     let span = Span::new(self.off(input), end);
+    let components = components.into_bump_slice();
     Ok((s, BreakableString { span, components }))
   }
 
@@ -777,7 +791,7 @@ impl<'a> Parser<'a> {
     let content = input[..input.len() - line_end.len()].trim_end();
     let span = Span::new(self.off(input), self.off(input) + content.len());
     let rest = strip_newline(line_end).unwrap_or(line_end);
-    (rest, SpannedString { span, content: content.into() })
+    (rest, SpannedString { span, content })
   }
 
   /// If the just-parsed instruction's first line declares heredocs, consume
@@ -785,7 +799,7 @@ impl<'a> Parser<'a> {
   /// `rest` is positioned at the newline ending the instruction's first line.
   fn maybe_consume_heredocs(&self, instruction: Instruction<'a>, rest: &'a str) -> (&'a str, Instruction<'a>) {
     let first_line = &self.base[instruction.span().start..self.off(rest)];
-    let delimiters = find_heredoc_delimiters(first_line);
+    let delimiters = find_heredoc_delimiters(self.bump, first_line);
     if delimiters.is_empty() {
       return (rest, instruction);
     }
@@ -802,7 +816,7 @@ impl<'a> Parser<'a> {
     let span = Span::new(instruction.span().start, body_end);
     let instruction = Instruction::Heredoc(HeredocInstruction {
       span,
-      instruction: Box::new(instruction),
+      instruction: self.bump.alloc(instruction),
       body,
     });
     (after, instruction)
@@ -860,10 +874,17 @@ impl<'a> Parser<'a> {
     Span::new(self.off(from), self.off(to))
   }
 
-  fn spanned(&self, from: &'a str, to: &'a str, content: impl Into<Cow<'a, str>>) -> SpannedString<'a> {
+  fn spanned(&self, from: &'a str, to: &'a str, content: &'a str) -> SpannedString<'a> {
     SpannedString {
       span: self.span(from, to),
-      content: content.into(),
+      content,
+    }
+  }
+
+  fn breakable_from_string(&self, s: SpannedString<'a>) -> BreakableString<'a> {
+    BreakableString {
+      span: s.span,
+      components: std::slice::from_ref(self.bump.alloc(BreakableStringComponent::String(s))),
     }
   }
 }
@@ -912,8 +933,8 @@ impl Heredoc<'_> {
 /// optional file descriptor, `<<` (or `<<-`), an optional quote, and a
 /// delimiter that starts with a letter or underscore (so shell bit-shifts like
 /// `$((1<<2))` are not mistaken for heredocs).
-fn find_heredoc_delimiters(first_line: &str) -> Vec<Heredoc<'_>> {
-  first_line.split_whitespace().filter_map(parse_heredoc_token).collect()
+fn find_heredoc_delimiters<'b, 'c>(bump: &'b Bump, first_line: &'c str) -> BumpVec<'b, Heredoc<'c>> {
+  BumpVec::from_iter_in(first_line.split_whitespace().filter_map(parse_heredoc_token), bump)
 }
 
 fn parse_heredoc_token(token: &str) -> Option<Heredoc<'_>> {
@@ -960,13 +981,6 @@ fn parse_heredoc_token(token: &str) -> Option<Heredoc<'_>> {
   }
 
   Some(Heredoc { word, strip_tabs })
-}
-
-fn breakable_from_string(s: SpannedString<'_>) -> BreakableString<'_> {
-  BreakableString {
-    span: s.span,
-    components: vec![BreakableStringComponent::String(s)],
-  }
 }
 
 fn component_end(component: &BreakableStringComponent) -> usize {
@@ -1067,13 +1081,14 @@ fn take_any_content(s: &str, escape: char) -> (&str, &str) {
 
 /// Resolves escapes in an unquoted value (e.g. `Rex\ The\ Dog` -> `Rex The
 /// Dog`): the escape character drops out and the following character is kept
-/// verbatim. A value with nothing to resolve borrows from the input.
-fn unescape(s: &str, escape: char) -> Cow<'_, str> {
+/// verbatim. A value with nothing to resolve borrows from the input, and
+/// otherwise it's built in the arena.
+fn unescape<'a>(bump: &'a Bump, s: &'a str, escape: char) -> &'a str {
   if !s.contains(escape) {
-    return Cow::Borrowed(s);
+    return s;
   }
 
-  let mut result = String::with_capacity(s.len());
+  let mut result = BumpString::with_capacity_in(s.len(), bump);
   let mut chars = s.chars();
   while let Some(c) = chars.next() {
     if c == escape {
@@ -1085,23 +1100,24 @@ fn unescape(s: &str, escape: char) -> Cow<'_, str> {
       result.push(c);
     }
   }
-  Cow::Owned(result)
+  result.into_bump_str()
 }
 
 /// Removes the surrounding quotes from a quoted string and resolves escape
 /// sequences, mirroring the `enquote` crate closely enough for Dockerfiles. The
 /// caller guarantees `s` begins and ends with an ASCII quote character. A
-/// string with no escape sequences borrows its content from the input.
-fn unquote(s: &str) -> Cow<'_, str> {
+/// string with no escape sequences borrows its content from the input, and
+/// otherwise it's built in the arena.
+fn unquote<'a>(bump: &'a Bump, s: &'a str) -> &'a str {
   if s.len() < 2 {
-    return Cow::Borrowed("");
+    return "";
   }
   let inner = &s[1..s.len() - 1]; // quotes are ASCII, so this is char-safe
   if !inner.contains('\\') {
-    return Cow::Borrowed(inner);
+    return inner;
   }
 
-  let mut result = String::with_capacity(inner.len());
+  let mut result = BumpString::with_capacity_in(inner.len(), bump);
   let mut iter = inner.chars();
   while let Some(c) = iter.next() {
     if c != '\\' {
@@ -1128,23 +1144,25 @@ fn unquote(s: &str) -> Cow<'_, str> {
       None => result.push('\\'),
     }
   }
-  Cow::Owned(result)
+  result.into_bump_str()
 }
 
 /// Reads `digits` hex characters and pushes the corresponding `char`. On any
 /// malformed sequence the bytes are emitted literally (matching `enquote`'s
 /// lenient fallback rather than failing the parse).
-fn push_unicode_escape(result: &mut String, iter: &mut std::str::Chars, digits: usize) {
+fn push_unicode_escape(result: &mut BumpString, iter: &mut std::str::Chars, digits: usize) {
   let marker = if digits == 4 { 'u' } else { 'U' };
-  let mut hex = String::with_capacity(digits);
-  for _ in 0..digits {
+  // the hex digits are ascii, so they're a slice of the remaining text
+  let remaining = iter.as_str();
+  let mut hex = "";
+  for i in 0..digits {
     match iter.next() {
-      Some(c) if c.is_ascii_hexdigit() => hex.push(c),
+      Some(c) if c.is_ascii_hexdigit() => hex = &remaining[..i + 1],
       other => {
         // not a valid escape — emit what we consumed verbatim
         result.push('\\');
         result.push(marker);
-        result.push_str(&hex);
+        result.push_str(hex);
         if let Some(c) = other {
           result.push(c);
         }
@@ -1152,12 +1170,12 @@ fn push_unicode_escape(result: &mut String, iter: &mut std::str::Chars, digits: 
       }
     }
   }
-  match u32::from_str_radix(&hex, 16).ok().and_then(char::from_u32) {
+  match u32::from_str_radix(hex, 16).ok().and_then(char::from_u32) {
     Some(c) => result.push(c),
     None => {
       result.push('\\');
       result.push(marker);
-      result.push_str(&hex);
+      result.push_str(hex);
     }
   }
 }
@@ -1212,12 +1230,13 @@ mod test {
       "   ",
       "# just a comment",
     ];
+    let bump = Bump::new();
     for case in cases {
-      let result = Dockerfile::parse(case);
+      let result = Dockerfile::parse(case, &bump);
       // must not panic; parse may legitimately error for some, but spans of any
       // produced instructions must stay within the input
       if let Ok(file) = result {
-        for instruction in &file.instructions {
+        for instruction in file.instructions {
           let span = instruction.span();
           assert!(span.end <= case.len(), "span out of range for {case:?}: {span:?}");
           assert!(span.start <= span.end, "inverted span for {case:?}: {span:?}");
@@ -1228,6 +1247,8 @@ mod test {
 
   #[test]
   fn unquotes_unicode_escapes() {
+    let bump = Bump::new();
+    let unquote = |s| unquote(&bump, s);
     assert_eq!(unquote(r#""café""#), "café");
     assert_eq!(unquote(r#""\U0001F600""#), "😀");
     assert_eq!(unquote(r#""a\tb\nc""#), "a\tb\nc");
@@ -1238,6 +1259,8 @@ mod test {
 
   #[test]
   fn detects_heredoc_delimiters() {
+    let bump = Bump::new();
+    let find_heredoc_delimiters = |s| find_heredoc_delimiters(&bump, s);
     let one = |s| {
       let d = find_heredoc_delimiters(s);
       assert_eq!(d.len(), 1, "{s:?}");
@@ -1259,11 +1282,12 @@ mod test {
 
   #[test]
   fn parses_heredoc_body_verbatim() {
-    let file = Dockerfile::parse("RUN <<EOF\n  indented\n\nblank above\nEOF\n").unwrap();
+    let bump = Bump::new();
+    let file = Dockerfile::parse("RUN <<EOF\n  indented\n\nblank above\nEOF\n", &bump).unwrap();
     match &file.instructions[0] {
       Instruction::Heredoc(h) => {
         assert_eq!(h.body, "  indented\n\nblank above\nEOF");
-        assert!(matches!(&*h.instruction, Instruction::Run(_)));
+        assert!(matches!(h.instruction, Instruction::Run(_)));
       }
       other => panic!("expected heredoc, got {other:?}"),
     }
@@ -1271,7 +1295,8 @@ mod test {
 
   #[test]
   fn tab_indented_closing_delimiter_for_dash_form() {
-    let file = Dockerfile::parse("RUN <<-EOF\n\tline\n\tEOF\n").unwrap();
+    let bump = Bump::new();
+    let file = Dockerfile::parse("RUN <<-EOF\n\tline\n\tEOF\n", &bump).unwrap();
     assert!(matches!(&file.instructions[0], Instruction::Heredoc(_)));
   }
 
@@ -1279,7 +1304,8 @@ mod test {
   fn keeps_comment_after_run_continuation() {
     // a comment right after `RUN \` must not be discarded (#12): it becomes the
     // leading component of the breakable shell string
-    let file = Dockerfile::parse("RUN \\\n# note\necho hi\n").unwrap();
+    let bump = Bump::new();
+    let file = Dockerfile::parse("RUN \\\n# note\necho hi\n", &bump).unwrap();
     match &file.instructions[0] {
       Instruction::Run(run) => match &run.expr {
         ShellOrExecExpr::Shell(b) => {
@@ -1295,7 +1321,8 @@ mod test {
   fn unterminated_heredoc_is_left_unwrapped() {
     // a `<<` whose delimiter never closes must not swallow the file or panic;
     // the instruction is left unwrapped (and the body lines parse on their own)
-    let file = Dockerfile::parse("RUN <<EOF\nno closing delimiter\n").unwrap();
+    let bump = Bump::new();
+    let file = Dockerfile::parse("RUN <<EOF\nno closing delimiter\n", &bump).unwrap();
     assert!(!matches!(&file.instructions[0], Instruction::Heredoc(_)));
   }
 }
