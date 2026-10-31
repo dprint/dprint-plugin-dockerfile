@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use crate::ast::*;
 
 macro_rules! create_node_ref {
@@ -7,7 +5,7 @@ macro_rules! create_node_ref {
     #[derive(Clone)]
     pub enum Node<'a> {
       /// our own created comment
-      CommentRc(Rc<SpannedComment<'a>>),
+      OwnedComment(SpannedComment<'a>),
       $(
         $variant_name(&'a $node_name<'a>),
       )*
@@ -72,12 +70,12 @@ impl Node<'_> {
       BreakableString(node) => node.span,
       StringArray(node) => node.span,
       Comment(node) => node.span,
-      CommentRc(node) => node.span,
+      OwnedComment(node) => node.span,
     }
   }
 
   pub fn is_comment(&self) -> bool {
-    matches!(self, Node::Comment(_) | Node::CommentRc(_))
+    matches!(self, Node::Comment(_) | Node::OwnedComment(_))
   }
 
   pub fn is_from(&self) -> bool {
@@ -98,7 +96,7 @@ pub fn nodes_with_comments<'a>(text: &'a str, start_pos: usize, end_pos: usize, 
     if !is_first || include_leading {
       let text = &text[last_pos..node.span().start];
       for comment in parse_comments(text, last_pos) {
-        result.push(Node::CommentRc(Rc::new(comment)));
+        result.push(Node::OwnedComment(comment));
       }
     }
     let node_end = node.span().end;
@@ -108,7 +106,7 @@ pub fn nodes_with_comments<'a>(text: &'a str, start_pos: usize, end_pos: usize, 
   }
   let text = &text[last_pos..end_pos];
   for comment in parse_comments(text, last_pos) {
-    result.push(Node::CommentRc(Rc::new(comment)));
+    result.push(Node::OwnedComment(comment));
   }
   result
 }

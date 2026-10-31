@@ -151,7 +151,7 @@ fn gen_node<'a>(node: Node<'a>, context: &mut Context<'a>) -> PrintItems<'a> {
     Node::String(node) => gen_string(node, context),
     Node::BreakableString(node) => gen_breakable_string(node, context),
     Node::CopyFlag(node) => gen_copy_flag(node, context),
-    Node::CommentRc(node) => gen_comment(&node, context),
+    Node::OwnedComment(node) => gen_comment(&node, context),
     Node::Comment(node) => gen_comment(node, context),
   });
   context.pop_current_node();
@@ -292,50 +292,42 @@ fn gen_label<'a>(node: &'a Label<'a>, context: &mut Context<'a>) -> PrintItems<'
 
 fn gen_multi_line_items<'a>(nodes: Vec<Node<'a>>, indent_width: u32, context: &mut Context<'a>) -> PrintItems<'a> {
   let count = nodes.len();
-  let nodes_with_line_index = nodes
-    .into_iter()
-    .map(|node| {
-      let line_index = context.dockerfile.line_index(node.span().start);
-      (node, line_index)
-    })
-    .collect::<Vec<_>>();
-  let force_use_new_lines = nodes_with_line_index.len() > 1
-    && (nodes_with_line_index[0].1 < nodes_with_line_index[1].1 || nodes_with_line_index.iter().any(|(node, _)| node.is_comment()));
+  let dockerfile = context.dockerfile;
+  let line_index = move |node: &Node| dockerfile.line_index(node.span().start);
+  let force_use_new_lines = count > 1 && (line_index(&nodes[0]) < line_index(&nodes[1]) || nodes.iter().any(|node| node.is_comment()));
   let space_continuation = space_continuation(context.escape());
   let arena = context.arena;
 
   ir_helpers::gen_separated_values(
-    |is_multiline| {
-      nodes_with_line_index
-        .into_iter()
-        .enumerate()
-        .map(|(i, (node, line_index))| {
-          let is_comment = node.is_comment();
-          let mut node_items = gen_node(node, context);
-          if i < count - 1 && !is_comment {
-            node_items.push_condition(conditions::if_true("endLineText", is_multiline.create_resolver(arena), {
-              let mut items = PrintItems::new(arena);
-              items.push_sc(space_continuation);
-              items
-            }));
-          }
+    move |is_multiline| {
+      let is_multiline = *is_multiline;
+      nodes.into_iter().enumerate().map(move |(i, node)| {
+        let line_index = line_index(&node);
+        let is_comment = node.is_comment();
+        let mut node_items = gen_node(node, context);
+        if i < count - 1 && !is_comment {
+          node_items.push_condition(conditions::if_true("endLineText", is_multiline.create_resolver(arena), {
+            let mut items = PrintItems::new(arena);
+            items.push_sc(space_continuation);
+            items
+          }));
+        }
 
-          ir_helpers::GeneratedValue {
-            items: if i > 0 {
-              ir_helpers::with_indent_times(node_items, indent_width)
-            } else {
-              node_items
-            },
-            lines_span: Some(ir_helpers::LinesSpan {
-              start_line: line_index,
-              end_line: line_index,
-            }),
-            allow_inline_multi_line: false,
-            allow_inline_single_line: false,
-            is_known_multi_line: false,
-          }
-        })
-        .collect::<Vec<_>>()
+        ir_helpers::GeneratedValue {
+          items: if i > 0 {
+            ir_helpers::with_indent_times(node_items, indent_width)
+          } else {
+            node_items
+          },
+          lines_span: Some(ir_helpers::LinesSpan {
+            start_line: line_index,
+            end_line: line_index,
+          }),
+          allow_inline_multi_line: false,
+          allow_inline_single_line: false,
+          is_known_multi_line: false,
+        }
+      })
     },
     ir_helpers::GenSeparatedValuesOptions {
       prefer_hanging: false,
@@ -442,7 +434,7 @@ fn gen_grouped_values<'a>(values: Vec<(PrintItems<'a>, usize)>, indent_width: u3
   let count = values.len();
   let space_continuation = space_continuation(context.escape());
   let arena = context.arena;
-  let indent_text = arena.bump().alloc_str(&" ".repeat(indent_width as usize));
+  let indent_text = bumpalo::collections::String::from_iter_in(std::iter::repeat_n(' ', indent_width as usize), arena.bump()).into_bump_str();
   ir_helpers::gen_separated_values(
     |is_multiline| {
       values
@@ -666,8 +658,7 @@ fn gen_string<'a>(node: &'a SpannedString<'a>, context: &mut Context<'a>) -> Pri
   if context.collapse_shell_ws {
     // run the quote-aware collapse on the raw text so significant whitespace
     // inside a quote is never stripped by a blind trim
-    let collapsed = collapse_shell_whitespace(raw, should_trim, &mut context.shell_quote);
-    let collapsed = context.arena.bump().alloc_str(&collapsed);
+    let collapsed = collapse_shell_whitespace(context.arena, raw, should_trim, &mut context.shell_quote);
     // trailing whitespace outside a quote is just a separator (represented by
     // the line-continuation marker), so drop it; inside a quote it is part of
     // the string and must be kept
@@ -686,69 +677,71 @@ fn gen_string<'a>(node: &'a SpannedString<'a>, context: &mut Context<'a>) -> Pri
 /// breakable string's components. Leading whitespace is kept as indentation
 /// unless `drop_leading` is set (the leading content line, whose indentation is
 /// trimmed away).
-fn collapse_shell_whitespace(text: &str, drop_leading: bool, quote: &mut Option<char>) -> String {
-  let mut out = String::with_capacity(text.len());
-  let mut chars = text.chars().peekable();
-
+///
+/// The text is borrowed when there's nothing to collapse, which is most of the
+/// time, and otherwise built in the arena.
+fn collapse_shell_whitespace<'a>(arena: &'a Arena, text: &'a str, drop_leading: bool, quote: &mut Option<char>) -> &'a str {
   // leading whitespace outside a quote is indentation: keep it, or drop it for
   // the leading content line
-  if quote.is_none() {
-    while matches!(chars.peek(), Some(' ' | '\t')) {
-      let c = chars.next().unwrap();
-      if !drop_leading {
-        out.push(c);
-      }
-    }
-  }
+  let leading_end = if quote.is_none() {
+    text.len() - text.trim_start_matches([' ', '\t']).len()
+  } else {
+    0
+  };
+  let start = if drop_leading { leading_end } else { 0 };
 
-  while let Some(c) = chars.next() {
+  // the characters that matter here are all ascii, so scanning the bytes is the
+  // same as scanning the chars (the bytes of a multi-byte char never match one)
+  let bytes = text.as_bytes();
+  let mut collapsed: Option<bumpalo::collections::String<'a>> = None;
+  let mut copied_end = start;
+  let mut i = leading_end;
+  while i < bytes.len() {
     match *quote {
       Some('\'') => {
-        out.push(c);
-        if c == '\'' {
+        if bytes[i] == b'\'' {
           *quote = None;
         }
+        i += 1;
       }
-      Some(_) => {
+      Some(_) => match bytes[i] {
         // inside a double quote: a backslash escapes the next character
-        out.push(c);
-        if c == '\\' {
-          if let Some(next) = chars.next() {
-            out.push(next);
-          }
-        } else if c == '"' {
+        b'\\' => i += 2,
+        b'"' => {
           *quote = None;
+          i += 1;
         }
-      }
-      None => match c {
-        '\'' | '"' => {
-          out.push(c);
-          *quote = Some(c);
+        _ => i += 1,
+      },
+      None => match bytes[i] {
+        b'\'' | b'"' => {
+          *quote = Some(bytes[i] as char);
+          i += 1;
         }
         // an escaped character (including `\ `) is kept verbatim
-        '\\' => {
-          out.push(c);
-          if let Some(next) = chars.next() {
-            out.push(next);
+        b'\\' => i += 2,
+        b' ' | b'\t' => {
+          let run_end = i + bytes[i..].iter().take_while(|b| matches!(b, b' ' | b'\t')).count();
+          if run_end - i > 1 {
+            let collapsed = collapsed.get_or_insert_with(|| bumpalo::collections::String::with_capacity_in(text.len() - start, arena.bump()));
+            collapsed.push_str(&text[copied_end..i]);
+            collapsed.push(' ');
+            copied_end = run_end;
           }
+          i = run_end;
         }
-        ' ' | '\t' => {
-          let mut count = 1;
-          while matches!(chars.peek(), Some(' ' | '\t')) {
-            chars.next();
-            count += 1;
-          }
-          if count > 1 {
-            out.push(' ');
-          } else {
-            out.push(c);
-          }
-        }
-        _ => out.push(c),
+        _ => i += 1,
       },
     }
   }
-  out
+
+  match collapsed {
+    Some(mut collapsed) => {
+      collapsed.push_str(&text[copied_end..]);
+      collapsed.into_bump_str()
+    }
+    None => &text[start..],
+  }
 }
 
 fn gen_copy_flag<'a>(node: &'a CopyFlag<'a>, context: &mut Context<'a>) -> PrintItems<'a> {
@@ -797,17 +790,21 @@ fn recover_dropped_comments<'a>(node: &Node<'a>, context: &mut Context<'a>) -> P
   items
 }
 
-fn gen_comment_text<'a>(arena: &'a Arena, text: &str) -> PrintItems<'a> {
+fn gen_comment_text<'a>(arena: &'a Arena, text: &'a str) -> PrintItems<'a> {
   // comments always retain their leading `#`(s); split them from the body text
   let text_start = text.find(|c| c != '#').unwrap_or(text.len());
   let comment_chars = &text[1..text_start];
-  let end_text = &text[text_start..].trim();
+  let body = &text[text_start..];
+  let end_text = body.trim();
+  // borrow the text when it's already formatted, which is most of the time
   let comment = if end_text.is_empty() {
-    format!("#{}", comment_chars)
+    &text[..text_start]
+  } else if body.strip_prefix(' ') == Some(end_text) {
+    text
   } else {
-    format!("#{} {}", comment_chars, end_text)
+    bumpalo::format!(in arena.bump(), "#{} {}", comment_chars, end_text).into_bump_str()
   };
   // via gen_from_raw_string so an interior tab becomes a Tab signal rather than
   // a raw tab (which the printer rejects)
-  gen_from_raw_string(arena, arena.bump().alloc_str(&comment))
+  gen_from_raw_string(arena, comment)
 }
