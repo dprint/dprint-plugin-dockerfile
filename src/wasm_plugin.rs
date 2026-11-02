@@ -40,6 +40,7 @@ impl SyncPluginHandler<Configuration> for DockerfilePluginHandler {
       help_url: "https://dprint.dev/plugins/dockerfile".to_string(),
       config_schema_url: format!("https://plugins.dprint.dev/dprint/dprint-plugin-dockerfile/{}/schema.json", version),
       update_url: Some("https://plugins.dprint.dev/dprint/dprint-plugin-dockerfile/latest.json".to_string()),
+      supports_range_formatting: Some(true),
     }
   }
 
