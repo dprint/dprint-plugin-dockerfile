@@ -2,6 +2,32 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://plugins.dprint.dev/dprint/dprint-plugin-dockerfile/0.0.0/schema.json",
   "type": "object",
+  "x-playground": {
+    "input": [
+      "# syntax=docker/dockerfile:1",
+      "ARG   NODE_VERSION=22",
+      "",
+      "FROM    node:${NODE_VERSION}-alpine   AS   build",
+      "WORKDIR   /app",
+      "COPY   package.json   package-lock.json   ./",
+      "RUN   npm   ci",
+      "COPY   .   .",
+      "RUN npm run build \\",
+      "      && npm prune   --omit=dev",
+      "",
+      "",
+      "FROM   node:${NODE_VERSION}-alpine",
+      "ENV   NODE_ENV production",
+      "ENV PORT=8080   LOG_LEVEL=info",
+      "WORKDIR /app",
+      "COPY   --from=build   /app/dist   ./dist",
+      "COPY --from=build /app/node_modules ./node_modules",
+      "USER    node",
+      "EXPOSE   8080",
+      "HEALTHCHECK   --interval=30s   --timeout=3s   CMD   wget -q -O- http://localhost:8080/health || exit 1",
+      "CMD   [ \"node\" ,\"dist/server.js\" ]"
+    ]
+  },
   "definitions": {
     "newLineKind": {
       "description": "The kind of newline to use.",
@@ -23,25 +49,44 @@
     "lineWidth": {
       "description": "The width of a line the printer will try to stay under. Note that the printer may exceed this width in certain cases.",
       "default": 120,
-      "type": "number"
+      "type": "integer",
+      "minimum": 1
     },
     "newLineKind": {
       "$ref": "#/definitions/newLineKind"
     },
     "healthcheckCmdNewLine": {
-      "description": "Whether to always break a HEALTHCHECK command onto its own continuation line when the instruction has options, even if it would fit on one line.",
+      "description": "Whether to always break a `HEALTHCHECK` command onto its own continuation line when the instruction has options, even if it would fit on one line.",
       "default": false,
-      "type": "boolean"
+      "type": "boolean",
+      "x-example": {
+        "input": [
+          "HEALTHCHECK --interval=30s --timeout=3s CMD curl -f http://localhost/ || exit 1"
+        ]
+      }
     },
     "indentStages": {
-      "description": "Whether to indent the body of each build stage—the instructions and comments that follow a FROM—by indentWidth spaces. The indentation is always spaces; useTabs is not honored.",
+      "description": "Whether to indent the body of each build stage (the instructions and comments that follow a `FROM`) by `indentWidth` spaces. The indentation is always spaces; `useTabs` is not honored.",
       "default": false,
-      "type": "boolean"
+      "type": "boolean",
+      "x-example": {
+        "input": [
+          "FROM node:22 AS build",
+          "WORKDIR /app",
+          "RUN npm ci",
+          "",
+          "FROM node:22-alpine",
+          "COPY --from=build /app /app",
+          "CMD [\"node\", \"/app/server.js\"]"
+        ]
+      }
     },
     "indentWidth": {
-      "description": "The number of spaces for an indent. Only used when indentStages is enabled.",
+      "description": "The number of spaces for an indent. Only used when `indentStages` is enabled.",
       "default": 2,
-      "type": "number"
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 255
     }
   }
 }
